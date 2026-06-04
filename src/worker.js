@@ -36,42 +36,38 @@ const PER_PAGE = 50;                       // Screener supports ?limit=50 logged
 const MAX_PAGES = 8;                       // safety cap → up to 400 rows/screen
 const SCREEN_TTL_MS = 3 * 24 * 3600 * 1000;   // serve cached screen rows for 3 days before re-fetching
 const COMPANY_TTL_MS = 7 * 24 * 3600 * 1000;  // serve cached company data for 7 days before re-fetching
-const ALLOWED_LIMITS = [25, 50, 100, 150, 200];
+const ALLOWED_LIMITS = [25, 50, 100];
 
 // The screens (single source of truth for the deployed Worker). `url` is the
 // public Screener screen page we read on demand.
 const SCREENS = [
-  { id:'piotroski', name:'Piotroski Scan', lens:'integrity',
+  { id:'piotroski', name:'Piotroski Scan', lenses:['integrity','quality'],
     gauge:'Clean, improving books.',
     formula:'<b>Piotroski score &gt; 7.</b> F-Score adds nine pass/fail tests on profitability, leverage and efficiency; 9 is best.',
     url:'https://www.screener.in/screens/2/piotroski-scan/' },
-  { id:'magic', name:'Magic Formula', lens:'value',
+  { id:'magic', name:'Magic Formula', lenses:['value','quality'],
     gauge:'Cheap and high-return together.',
-    formula:'<b>Return on invested capital &gt; 25%</b> AND <b>Earnings yield &gt; 15%</b> AND Book value &gt; 0 AND Market cap &gt; ₹15 cr.',
+    formula:'<b>Return on invested capital &gt; 25</b> AND <b>Earnings yield &gt; 15</b> AND Book value &gt; 0 AND Market Capitalization &gt; 15.',
     url:'https://www.screener.in/screens/59/magic-formula/' },
-  { id:'coffee', name:'Coffee Can Portfolio', lens:'quality',
+  { id:'growth', name:'Growth Stocks', lenses:['growth','quality'],
+    gauge:'High growth at a fair price.',
+    formula:'<b>G Factor &ge; 7</b> AND <b>Market Capitalization &gt; 1.</b><span style="display:block;margin-top:6px;color:var(--dim);font-weight:400">G Factor is Screener&rsquo;s growth-quality score out of 10: scored from recent quarterly sales &amp; profit growth and how clean and consistent those earnings are. Higher = stronger, better-quality growth.</span>',
+    url:'https://www.screener.in/screens/178/growth-stocks/' },
+  { id:'coffee', name:'Coffee Can Portfolio', lenses:['quality','growth'],
     gauge:'Decade-long consistent compounders.',
-    formula:'<b>Sales growth &gt; 10%</b> AND <b>10-yr sales growth &gt; 10%</b> AND <b>ROE &gt; 15%</b> AND <b>10-yr avg ROCE &gt; 15%</b> AND Market cap &gt; ₹1,000 cr.',
+    formula:'<b>Sales growth &gt; 10%</b> AND <b>Sales growth 10Years &gt; 10%</b> AND <b>Return on equity &gt; 15%</b> AND <b>Average ROCE 10Years &gt; 15%</b> AND Market Capitalization &gt; 1000.',
     url:'https://www.screener.in/screens/57601/coffee-can-portfolio/' },
-  { id:'garp', name:'High Growth · High RoE · Low PE', lens:'garp',
-    gauge:'Fast growth, still cheap.',
-    formula:'<b>YoY quarterly sales growth &gt; 40%</b> AND <b>YoY quarterly profit growth &gt; 40%</b> AND <b>3-yr avg ROCE &gt; 30%</b> AND <b>P/E &lt; 6</b>.',
-    url:'https://www.screener.in/screens/18/high-growth-high-roe-low-pe/' },
-  { id:'value', name:'Value Stocks (Quality)', lens:'quality',
-    gauge:'High-quality, low-debt businesses.',
-    formula:'<b>EPS last year &gt; 20</b> AND <b>Debt/Equity &lt; 0.1</b> AND <b>5-yr avg ROCE &gt; 35%</b> AND <b>5-yr OPM &gt; 15%</b> AND Market cap &gt; ₹500 cr.',
-    url:'https://www.screener.in/screens/184/value-stocks/' },
-  { id:'capex', name:'Capacity Expansion', lens:'balance',
+  { id:'capex', name:'Capacity Expansion', lenses:['growth','balance'],
     gauge:'Building big new capacity.',
-    formula:'(<b>3-yr sales growth &gt; 12%</b> AND Net block &gt; 2&times; its level 3 years ago) OR (Net block + CWIP &gt; 1.5&times; last year). Plus Sales &gt; ₹25 cr, Debt/Equity &lt; 3, Market cap &gt; ₹25 cr.',
+    formula:'( (<b>Sales growth 3Years &gt; 12%</b> AND Net block &gt; Net block 3Years back &times; 2) OR (Net block + CWIP &gt; 1.5 &times; preceding-year Net block + CWIP) ) AND Sales last year &gt; 25 AND Debt to equity &lt; 3 AND Market Capitalization &gt; 25.',
     url:'https://www.screener.in/screens/97687/capacity-expansion/' },
-  { id:'debt', name:'Debt Reduction', lens:'balance',
+  { id:'debt', name:'Debt Reduction', lenses:['balance','growth'],
     gauge:'Cutting debt while still investing.',
-    formula:'<b>Debt &lt; debt 3 years ago</b> AND <b>Gross block &gt; 1.2&times; last year.</b>',
+    formula:'<b>Debt &lt; Debt 3Years back</b> AND <b>Gross block &gt; 1.2 &times; Gross block preceding year.</b>',
     url:'https://www.screener.in/screens/126864/debt-reduction/' },
-  { id:'graham', name:'Low on 10-Yr Avg Earnings', lens:'value',
+  { id:'graham', name:'Low on 10-Yr Avg Earnings', lenses:['value','quality'],
     gauge:'Cheap on 10-year earnings.',
-    formula:'<b>Market cap / 10-yr avg earnings &lt; 15</b> AND 3-yr avg dividend payout &gt; 20% AND Debt/Equity &lt; 0.2 AND 7-yr avg ROCE &gt; 20%.',
+    formula:'<b>Market Capitalization / Average Earnings 10Year &lt; 15</b> AND Average dividend payout 3years &gt; 20 AND Debt to equity &lt; 0.2 AND Average ROCE 7Years &gt; 20.',
     url:'https://www.screener.in/screens/6994/low-on-10-year-average-earnings/' },
 ];
 const SCREEN_BY_ID = Object.fromEntries(SCREENS.map((s, i) => [s.id, { ...s, sort_order: i }]));
@@ -129,7 +125,7 @@ async function handleApi(request, env, url) {
       SELECT rank, symbol, company, metric_label, metric_value
       FROM screen_entries WHERE screen_id = ? ORDER BY rank ASC LIMIT ?
     `).bind(id, limit).all();
-    return json({ screen: { id: meta.id, name: meta.name, lens: meta.lens, gauge: meta.gauge, formula: meta.formula, screener_url: meta.url }, entries: results, source: status });
+    return json({ screen: { id: meta.id, name: meta.name, lens: meta.lenses.join(','), gauge: meta.gauge, formula: meta.formula, screener_url: meta.url }, entries: results, source: status });
   }
 
   // POST /api/intersection  { screenIds: string[], limit: number, refresh?: bool }
@@ -270,11 +266,18 @@ async function handleApi(request, env, url) {
 /* ============================ screen fetch / cache ============================ */
 
 async function ensureScreensSeeded(db) {
-  // Insert the 8 screen metadata rows once; harmless if they already exist.
+  // Upsert current screen metadata (so formula/label/gauge edits apply on deploy)…
   const stmts = SCREENS.map((s, i) => db.prepare(
-    `INSERT OR IGNORE INTO screens (id,name,lens,gauge,formula,screener_url,sort_order) VALUES (?,?,?,?,?,?,?)`
-  ).bind(s.id, s.name, s.lens, s.gauge, s.formula, s.url, i));
+    `INSERT INTO screens (id,name,lens,gauge,formula,screener_url,sort_order) VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, lens=excluded.lens, gauge=excluded.gauge,
+       formula=excluded.formula, screener_url=excluded.screener_url, sort_order=excluded.sort_order`
+  ).bind(s.id, s.name, s.lenses.join(','), s.gauge, s.formula, s.url, i));
   await db.batch(stmts);
+  // …and purge any screens that have been removed from the set.
+  const ids = SCREENS.map((s) => s.id);
+  const ph = ids.map(() => '?').join(',');
+  await db.prepare(`DELETE FROM screen_entries WHERE screen_id NOT IN (${ph})`).bind(...ids).run();
+  await db.prepare(`DELETE FROM screens WHERE id NOT IN (${ph})`).bind(...ids).run();
 }
 
 // Serve cached rows if this screen was fetched within SCREEN_TTL_MS and we hold

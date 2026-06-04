@@ -5,12 +5,11 @@
 const API = ''; // same origin (the Worker serves both UI and API)
 
 const LENS = {
-  integrity:{c:'#22D3EE', label:'Integrity'},
-  value:    {c:'#5EE6F5', label:'Value'},
+  integrity:{c:'#3DD9E0', label:'Integrity'},
+  value:    {c:'#5EEAD4', label:'Value'},
   quality:  {c:'#2FD4BF', label:'Quality'},
-  garp:     {c:'#A78BFA', label:'GARP'},
-  balance:  {c:'#E3B86A', label:'Balance-sheet'},
-  growth:   {c:'#7AA8FF', label:'Growth'},
+  growth:   {c:'#67C9FF', label:'Growth'},
+  balance:  {c:'#E3B86A', label:'Balance sheet'},
 };
 
 const I = {
@@ -92,7 +91,7 @@ function apiError(title, msg){
   return `<div class="empty big"><h3>${esc(title)}</h3><p>${esc(msg||'')}<br><span style="color:var(--dim)">Is the Worker deployed and the D1 database created? See the README.</span></p></div>`;
 }
 function renderLegend(){
-  const used = [...new Set((state.screens||[]).map(s=>s.lens))];
+  const used = [...new Set((state.screens||[]).flatMap(s=>String(s.lens||'').split(',').filter(Boolean)))];
   $('#legend').innerHTML = used.map(l=>`<span><span class="lensdot" style="background:${LENS[l]?.c||'#888'}"></span>${LENS[l]?.label||l}</span>`).join('');
 }
 function renderScreens(){
@@ -100,7 +99,9 @@ function renderScreens(){
   renderLegend();
   $('#screenGrid').innerHTML = state.screens.map(sc=>{
     const sel = state.selected.has(sc.id);
-    const lc = LENS[sc.lens]?.c || '#888';
+    const lenses = String(sc.lens||'').split(',').filter(Boolean);
+    const lc = LENS[lenses[0]]?.c || '#888';
+    const pills = lenses.map(l=>`<span class="lenspill"><span class="lensdot" style="background:${LENS[l]?.c||'#888'}"></span>${LENS[l]?.label||l}</span>`).join('');
     const loaded = sc.count>0;
     const cnt = loaded ? `${sc.count} loaded · ${ago(sc.updated_at)} · view list →` : `tap to fetch live from Screener →`;
     return `<div class="screen ${sel?'sel':''}" onclick="onScreenClick('${sc.id}')">
@@ -108,7 +109,7 @@ function renderScreens(){
         <div class="nm"><span class="lensdot" style="background:${lc}"></span>${esc(sc.name)}</div>
         <div class="chk" onclick="toggleSel('${sc.id}', event)">${I.check}</div>
       </div>
-      <span class="lenspill"><span class="lensdot" style="background:${lc}"></span>${LENS[sc.lens]?.label||sc.lens}</span>
+      <div class="lenspills">${pills}</div>
       <div class="gauge">${esc(sc.gauge)}</div>
       <div class="formula">${sc.formula||''}</div>
       <div class="cnt"><span>${cnt}</span>${sc.screener_url?`<a href="${esc(sc.screener_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Screener ↗</a>`:''}</div>
@@ -131,13 +132,14 @@ function clearSel(){ state.selected.clear(); renderScreens(); }
 async function openScreenList(id, force){
   state.openScreen=id;
   const sc = (state.screens||[]).find(s=>s.id===id) || {name:id, lens:'value'};
-  const lc = LENS[sc.lens]?.c || '#888';
+  const lenses = String(sc.lens||'').split(',').filter(Boolean);
+  const lc = LENS[lenses[0]]?.c || '#888';
   $('#interMount').innerHTML='';
   $('#screenListMount').innerHTML = `<div class="listwrap"><div class="loading"><span class="spinner"></span> Fetching “${esc(sc.name)}” live from Screener… <span style="color:var(--dim)">(first load can take a few seconds)</span></div></div>`;
   $('#screenListMount').scrollIntoView({behavior:'smooth', block:'nearest'});
   let data;
   try{
-    const r = await fetch(`${API}/api/screens/${encodeURIComponent(id)}?limit=200${force?'&refresh=1':''}`);
+    const r = await fetch(`${API}/api/screens/${encodeURIComponent(id)}?limit=100${force?'&refresh=1':''}`);
     data = await r.json();
     if(!r.ok) throw new Error(data.error||'Failed');
   }catch(e){
@@ -155,7 +157,7 @@ async function openScreenList(id, force){
   $('#screenListMount').innerHTML = `
     <div class="listwrap">
       <div class="listhead">
-        <div class="ttl"><span class="lensdot" style="background:${lc}"></span>${esc(sc.name)}<span class="meta" style="margin-left:6px">${LENS[sc.lens]?.label||sc.lens}</span></div>
+        <div class="ttl"><span class="lensdot" style="background:${lc}"></span>${esc(sc.name)}<span class="meta" style="margin-left:6px">${lenses.map(l=>LENS[l]?.label||l).join(' · ')}</span></div>
         <div class="meta">${srcNote} · ${entries.length} shown · <button class="add" style="padding:5px 10px" onclick="openScreenList('${id}', true)">${I.refresh} refresh</button> · <button class="add" style="padding:5px 10px" onclick="closeScreenList()">close ✕</button></div>
       </div>
       <div class="rowscroll">${rows || `<div class="empty"><h3>No entries</h3><p>${src.error?'Screener couldn’t be reached. Try refresh, or load this screen manually.':'This screen returned no rows.'}</p></div>`}</div>
@@ -186,7 +188,7 @@ function openInterDialog(){
     </div>
     <div class="selnote">Intersecting <b>${names.length} screens</b>: ${names.map(esc).join(' · ')}</div>
     <div class="mb"><div class="nopts">
-      ${[25,50,100,150,200].map(n=>`<button class="nopt ${state.interN===n?'on':''}" data-n="${n}" onclick="pickN(${n})">${n}<small>entries</small></button>`).join('')}
+      ${[25,50,100].map(n=>`<button class="nopt ${state.interN===n?'on':''}" data-n="${n}" onclick="pickN(${n})">${n}<small>entries</small></button>`).join('')}
     </div></div>
     <div class="mf">
       <button class="btn-sm btn-clear" onclick="closeOverlay()">Cancel</button>

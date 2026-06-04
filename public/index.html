@@ -9,6 +9,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/styles.css" />
+<link rel="icon" type="image/svg+xml" href="/logo.svg" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05131A" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Meridian" />
 </head>
 <body>
 <div class="wrap">
@@ -16,16 +24,20 @@
   <!-- TOP BAR -->
   <header class="topbar">
     <button class="brand" onclick="goHome()" aria-label="Meridian home">
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <defs>
-          <linearGradient id="mg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="var(--accent-2)"/><stop offset="1" stop-color="var(--accent-deep)"/>
-          </linearGradient>
-        </defs>
-        <path d="M9 47 L24 14 L32 31 L40 14 L55 47 L45 47 L37 27 L32 37 L27 27 L19 47 Z" fill="url(#mg)"/>
-        <path d="M11 50 Q32 40 53 50 Q34 53 11 50 Z" fill="url(#mg)" opacity=".95"/>
-        <path d="M16 55 Q32 48 48 55 Q33 57 16 55 Z" fill="var(--accent)" opacity=".5"/>
-        <path d="M32 41 l1.5 4.5 4.5 1.5 -4.5 1.5 -1.5 4.5 -1.5 -4.5 -4.5 -1.5 4.5 -1.5 Z" fill="#fff"/>
+      <svg class="brandlogo" viewBox="0 0 200 200" aria-hidden="true" fill="none">
+        <circle cx="100" cy="100" r="64" fill="none" stroke="currentColor" stroke-width="6"/>
+        <path d="M100 44 L104.5 50 L100 56 L95.5 50 Z" fill="currentColor"/>
+        <path d="M100 144 L104.5 150 L100 156 L95.5 150 Z" fill="currentColor"/>
+        <path d="M44 100 L50 95.5 L56 100 L50 104.5 Z" fill="currentColor"/>
+        <path d="M144 100 L150 95.5 L156 100 L150 104.5 Z" fill="currentColor"/>
+        <rect x="74" y="102" width="15" height="38" rx="2" fill="currentColor"/>
+        <rect x="93" y="84" width="15" height="56" rx="2" fill="currentColor"/>
+        <rect x="112" y="66" width="15" height="74" rx="2" fill="currentColor"/>
+        <path d="M48 134 C 86 128, 118 104, 150 60" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+        <path d="M161 47 L139 57 L156 71 Z" fill="currentColor"/>
+        <g fill="currentColor" font-family="Inter, sans-serif" font-weight="700" font-size="24" text-anchor="middle">
+          <text x="100" y="31">N</text><text x="100" y="191">S</text><text x="21" y="109">W</text><text x="179" y="109">E</text>
+        </g>
       </svg>
       <span class="name">Meridian</span>
     </button>

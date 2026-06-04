@@ -1,27 +1,27 @@
 :root{
-  --bg:#070D19; --bg-2:#0A1325; --surface:#0E192E; --surface-2:#12203A;
-  --line:rgba(120,165,210,.14); --line-2:rgba(120,165,210,.26);
-  --text:#E9F0F9; --muted:#94A8C2; --dim:#62799A;
-  --accent:#22D3EE; --accent-2:#5EE6F5; --accent-deep:#0EA5C4;
-  --glow:rgba(34,211,238,.30); --glow-soft:rgba(34,211,238,.14);
-  --pos:#2FD4BF; --neg:#D89B6A; --warn:#E3B86A;
+  --bg:#05131A; --bg-2:#07202A; --surface:#0A2530; --surface-2:#103240;
+  --line:rgba(90,222,228,.14); --line-2:rgba(90,222,228,.26);
+  --text:#E7F7F8; --muted:#9BC2C7; --dim:#638C93;
+  --accent:#3DD9E0; --accent-2:#7CEFE6; --accent-deep:#15B4C2;
+  --glow:rgba(61,217,224,.30); --glow-soft:rgba(61,217,224,.14);
+  --pos:#2FD4BF; --neg:#E0A079; --warn:#E3C36A;
   --r:16px; --r-lg:22px;
   --t:160ms cubic-bezier(.22,.61,.36,1);
   --shadow:0 18px 48px -22px rgba(0,0,0,.7), 0 2px 10px -4px rgba(0,0,0,.45);
   --shadow-glow:0 0 0 1px var(--line-2), 0 22px 60px -26px var(--glow);
-  --card-grad:linear-gradient(160deg, rgba(34,211,238,.05), rgba(34,211,238,0) 42%);
+  --card-grad:linear-gradient(160deg, rgba(61,217,224,.06), rgba(61,217,224,0) 42%);
   --topbar-h:66px; --tabbar-h:54px;
 }
 [data-theme="light"]{
-  --bg:#EAF1F8; --bg-2:#F2F7FC; --surface:#FFFFFF; --surface-2:#F5F9FD;
-  --line:rgba(20,65,110,.12); --line-2:rgba(20,65,110,.2);
-  --text:#0D1B2E; --muted:#516481; --dim:#7E90A8;
-  --accent:#0C9CBC; --accent-2:#16B6D6; --accent-deep:#0A8AA6;
-  --glow:rgba(12,156,188,.22); --glow-soft:rgba(12,156,188,.10);
-  --pos:#0D9488; --neg:#BE7A45; --warn:#B98517;
-  --shadow:0 16px 40px -24px rgba(20,50,90,.35), 0 2px 8px -4px rgba(20,50,90,.18);
+  --bg:#E4F7F4; --bg-2:#EFFBF9; --surface:#FFFFFF; --surface-2:#F1FBFA;
+  --line:rgba(13,110,118,.12); --line-2:rgba(13,110,118,.2);
+  --text:#07282B; --muted:#48767B; --dim:#7CA6AB;
+  --accent:#0FB6C2; --accent-2:#23CFD6; --accent-deep:#0A8E9A;
+  --glow:rgba(15,182,194,.20); --glow-soft:rgba(15,182,194,.10);
+  --pos:#0D9488; --neg:#C2795A; --warn:#B08512;
+  --shadow:0 16px 40px -24px rgba(15,80,85,.32), 0 2px 8px -4px rgba(15,80,85,.16);
   --shadow-glow:0 0 0 1px var(--line-2), 0 18px 48px -28px var(--glow);
-  --card-grad:linear-gradient(160deg, rgba(12,156,188,.045), rgba(12,156,188,0) 42%);
+  --card-grad:linear-gradient(160deg, rgba(15,182,194,.05), rgba(15,182,194,0) 42%);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -35,8 +35,8 @@ body::before{
   content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
   background:
     radial-gradient(900px 480px at 50% -8%, var(--glow-soft), transparent 70%),
-    radial-gradient(700px 500px at 88% 8%, rgba(94,230,245,.05), transparent 72%),
-    radial-gradient(800px 600px at 6% 30%, rgba(14,165,196,.05), transparent 70%),
+    radial-gradient(700px 500px at 88% 8%, rgba(124,239,230,.05), transparent 72%),
+    radial-gradient(800px 600px at 6% 30%, rgba(21,180,194,.05), transparent 70%),
     linear-gradient(180deg, var(--bg), var(--bg-2));
 }
 .wrap{position:relative; z-index:1}
@@ -360,3 +360,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border:none;border-ra
 /* live price colours in detail header */
 .dhead .price .d.up{ color:var(--pos); }
 .dhead .price .d.down{ color:var(--neg); }
+
+/* multi-label pills + brand logo */
+.lenspills{ display:flex; gap:6px; flex-wrap:wrap; margin:0 0 2px; }
+.brandlogo{ width:34px; height:34px; color:var(--accent); display:block; flex:0 0 auto; }
