@@ -239,7 +239,7 @@ async function handleApi(request, env, url) {
   const mDebug = p.match(/^\/api\/debug\/([^/]+)$/);
   if (mDebug && request.method === 'GET') {
     const meta = SCREEN_BY_ID[decodeURIComponent(mDebug[1])] || SCREENS[0];
-    const direct = `${meta.url.replace(/\?.*$/, '')}?limit=50&page=1`;
+    const direct = meta.url.replace(/\?.*$/, '');
     const target = PROXY ? PROXY + encodeURIComponent(direct) : direct;
     let proxyHost = null; try { if (PROXY) proxyHost = new URL(PROXY).host; } catch {}
     const info = { screen: meta.id, url: direct, viaProxy: !!PROXY, proxyHost };
@@ -282,7 +282,7 @@ async function ensureScreensSeeded(db) {
 // back to whatever rows are already in D1 so the UI degrades instead of breaking.
 async function ensureScreen(db, meta, limit) {
   const row = await db.prepare(`SELECT updated_at, (SELECT COUNT(*) FROM screen_entries WHERE screen_id=?) n FROM screens WHERE id=?`).bind(meta.id, meta.id).first();
-  if (row && row.updated_at && (Date.now() - row.updated_at) < SCREEN_TTL_MS && row.n >= limit)
+  if (row && row.n > 0 && row.updated_at && (Date.now() - row.updated_at) < SCREEN_TTL_MS)
     return { from: 'cache', count: row.n, updated_at: row.updated_at };
   try {
     const entries = await fetchScreen(meta, limit);
@@ -294,21 +294,25 @@ async function ensureScreen(db, meta, limit) {
   }
 }
 
-// Fetch a screen's ranked list to at least `depth` rows by paginating Screener.
+// Fetch a screen's ranked list. Page 1 MUST be the bare screen URL: Screener
+// serves results to anonymous visitors there, but bounces query-string requests
+// (?limit=, ?page=) to its Register page. So we read page 1 (top ~25) from the
+// bare URL, and only paginate deeper if those pages actually return rows — which
+// they do once a logged-in SCREENER_COOKIE is supplied; anonymously page 1 is the cap.
 async function fetchScreen(meta, depth) {
-  const pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(depth / PER_PAGE)));
   const base = meta.url.replace(/\?.*$/, '');
+  const pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(depth / 25)));
   const out = [];
   for (let pg = 1; pg <= pages; pg++) {
-    const html = await fetchText(`${base}?limit=${PER_PAGE}&page=${pg}`);
-    const rows = parseScreenTable(html);
-    if (!rows.length) break;
-    for (const r of rows) out.push(r);
-    if (rows.length < PER_PAGE) break; // last page
+    const url = pg === 1 ? base : `${base}?page=${pg}`;
+    const rows = parseScreenTable(await fetchText(url));
+    if (!rows.length) break;                 // pagination gated for anonymous -> stop
+    out.push(...rows);
     if (out.length >= depth) break;
   }
-  // Normalise rank to overall position (Screener's S.No already does this, but be safe).
-  return out.map((r, i) => ({ ...r, rank: Number.isFinite(r.rank) ? r.rank : i + 1 }));
+  const seen = new Set(), uniq = [];
+  for (const r of out) { if (r.symbol && !seen.has(r.symbol)) { seen.add(r.symbol); uniq.push(r); } }
+  return uniq.map((r, i) => ({ ...r, rank: Number.isFinite(r.rank) ? r.rank : i + 1 }));
 }
 
 async function writeScreenEntries(db, meta, entries) {
