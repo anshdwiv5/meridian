@@ -34,8 +34,8 @@ const BROWSER_HEADERS = {
 };
 const PER_PAGE = 50;                       // Screener supports ?limit=50 logged-out
 const MAX_PAGES = 8;                       // safety cap → up to 400 rows/screen
-const SCREEN_TTL_MS = 12 * 3600 * 1000;    // re-fetch a screen at most this often
-const COMPANY_TTL_MS = 24 * 3600 * 1000;   // re-fetch a company page at most this often
+const SCREEN_TTL_MS = 24 * 3600 * 1000;    // re-fetch a screen at most this often (cache protects proxy credits)
+const COMPANY_TTL_MS = 48 * 3600 * 1000;   // re-fetch a company page at most this often
 const ALLOWED_LIMITS = [25, 50, 100, 150, 200];
 
 // The screens (single source of truth for the deployed Worker). `url` is the
