@@ -34,8 +34,8 @@ const BROWSER_HEADERS = {
 };
 const PER_PAGE = 50;                       // Screener supports ?limit=50 logged-out
 const MAX_PAGES = 8;                       // safety cap → up to 400 rows/screen
-const SCREEN_TTL_MS = 24 * 3600 * 1000;    // re-fetch a screen at most this often (cache protects proxy credits)
-const COMPANY_TTL_MS = 48 * 3600 * 1000;   // re-fetch a company page at most this often
+const SCREEN_TTL_MS = 3 * 24 * 3600 * 1000;   // serve cached screen rows for 3 days before re-fetching
+const COMPANY_TTL_MS = 7 * 24 * 3600 * 1000;  // serve cached company data for 7 days before re-fetching
 const ALLOWED_LIMITS = [25, 50, 100, 150, 200];
 
 // The screens (single source of truth for the deployed Worker). `url` is the
@@ -277,17 +277,19 @@ async function ensureScreensSeeded(db) {
   await db.batch(stmts);
 }
 
-// ALWAYS fetch fresh — no caching (configured for real-time). On a fetch/parse
-// failure, fall back to whatever rows are already in D1 so the UI degrades
-// instead of breaking.
+// Serve cached rows if this screen was fetched within SCREEN_TTL_MS and we hold
+// at least `limit` rows; otherwise fetch fresh. On a fetch/parse failure, fall
+// back to whatever rows are already in D1 so the UI degrades instead of breaking.
 async function ensureScreen(db, meta, limit) {
+  const row = await db.prepare(`SELECT updated_at, (SELECT COUNT(*) FROM screen_entries WHERE screen_id=?) n FROM screens WHERE id=?`).bind(meta.id, meta.id).first();
+  if (row && row.updated_at && (Date.now() - row.updated_at) < SCREEN_TTL_MS && row.n >= limit)
+    return { from: 'cache', count: row.n, updated_at: row.updated_at };
   try {
     const entries = await fetchScreen(meta, limit);
     if (!entries.length) throw new Error('proxy/Screener returned a page but 0 rows parsed (see /api/debug)');
     await writeScreenEntries(db, meta, entries);
     return { from: 'live', count: entries.length, updated_at: Date.now() };
   } catch (e) {
-    const row = await db.prepare(`SELECT updated_at, (SELECT COUNT(*) FROM screen_entries WHERE screen_id=?) n FROM screens WHERE id=?`).bind(meta.id, meta.id).first();
     return { from: row && row.n ? 'stale' : 'none', count: (row && row.n) || 0, updated_at: row && row.updated_at, error: String(e.message || e) };
   }
 }
@@ -384,8 +386,9 @@ function parseScreenTable(html) {
 
 async function ensureCompany(db, symbol, force) {
   const row = await db.prepare(`SELECT symbol, ticker, fetched_at FROM stocks WHERE symbol=?`).bind(symbol).first();
-  if (!row) return { from: 'none', error: 'unknown symbol — add it from a screen first' };
-  try {  // always fetch fresh — no caching
+  if (!row) return { from: 'none', error: 'unknown symbol, add it from a screen first' };
+  if (row.fetched_at && (Date.now() - row.fetched_at) < COMPANY_TTL_MS) return { from: 'cache', fetched_at: row.fetched_at };
+  try {
     const html = await fetchText(`${SCREENER}/company/${encodeURIComponent(symbol)}/consolidated/`);
     const d = parseCompany(html);
     await db.prepare(`

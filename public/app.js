@@ -187,9 +187,7 @@ function openInterDialog(){
     <div class="selnote">Intersecting <b>${names.length} screens</b>: ${names.map(esc).join(' · ')}</div>
     <div class="mb"><div class="nopts">
       ${[25,50,100,150,200].map(n=>`<button class="nopt ${state.interN===n?'on':''}" data-n="${n}" onclick="pickN(${n})">${n}<small>entries</small></button>`).join('')}
-    </div>
-    <label class="freshrow"><input type="checkbox" id="freshChk" ${state.refresh?'checked':''} onchange="state.refresh=this.checked"> Force a fresh fetch from Screener (otherwise uses cache &lt; 12h old)</label>
-    </div>
+    </div></div>
     <div class="mf">
       <button class="btn-sm btn-clear" onclick="closeOverlay()">Cancel</button>
       <button class="btn-sm btn-go" id="runInter" onclick="runIntersection()" ${state.interN?'':'disabled'}>Show intersection</button>
