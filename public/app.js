@@ -150,12 +150,12 @@ async function openScreenList(id, force){
   entries.forEach(en => { state.rowIndex[en.symbol] = state.rowIndex[en.symbol] || {symbol:en.symbol, company:en.company}; });
   const rows = entries.map(en => screenRow(en)).join('');
   const srcNote = src.error
-    ? `<span class="srcbad">couldn’t reach Screener — ${esc(src.error)}</span>`
+    ? `<span class="srcbad">Screener unavailable. ${esc(src.error)}</span>`
     : `<span class="srcok">${src.from==='cache'?'cached':'live from Screener'} · ${ago(src.updated_at)}</span>`;
   $('#screenListMount').innerHTML = `
     <div class="listwrap">
       <div class="listhead">
-        <div class="ttl"><span class="lensdot" style="background:${lc}"></span>${esc(sc.name)}<span class="meta" style="margin-left:6px">— ${LENS[sc.lens]?.label||sc.lens}</span></div>
+        <div class="ttl"><span class="lensdot" style="background:${lc}"></span>${esc(sc.name)}<span class="meta" style="margin-left:6px">${LENS[sc.lens]?.label||sc.lens}</span></div>
         <div class="meta">${srcNote} · ${entries.length} shown · <button class="add" style="padding:5px 10px" onclick="openScreenList('${id}', true)">${I.refresh} refresh</button> · <button class="add" style="padding:5px 10px" onclick="closeScreenList()">close ✕</button></div>
       </div>
       <div class="rowscroll">${rows || `<div class="empty"><h3>No entries</h3><p>${src.error?'Screener couldn’t be reached. Try refresh, or load this screen manually.':'This screen returned no rows.'}</p></div>`}</div>
@@ -224,16 +224,17 @@ function renderIntersection(data){
   const names = (state.screens||[]).filter(s=>data.screenIds.includes(s.id)).map(s=>s.name);
   const warn = data.warning ? `<div class="warnbar">${I.refresh} ${esc(data.warning)}</div>` : '';
   if(!data.count){
+    const failed = !!data.warning;
     $('#interMount').innerHTML = `
       <div class="listwrap" style="border-color:var(--line-2)">
         <div class="listhead">
-          <div class="ttl">${I.compass}&nbsp; Intersection · <b style="color:var(--text)">0 results</b></div>
+          <div class="ttl">${I.compass}&nbsp; Intersection</div>
           <div class="meta">Top ${data.limit} of each · ${names.length} screens</div>
         </div>
-        ${warn}
         <div class="empty">
-          <h3>No company survives all ${names.length} screens at this depth</h3>
-          <p>Not a single name appears in the top <b>${data.limit}</b> of every selected screen. That's a real answer — try a looser depth (e.g. 100–200), or fewer / more compatible screens.</p>
+          ${ failed
+            ? `<h3>Couldn’t fetch from Screener</h3><p>${esc(data.warning)}</p>`
+            : `<h3>No intersection</h3><p>No company appears in all ${names.length} selected screens at this depth.</p>` }
         </div>
       </div>`;
     return;
@@ -278,7 +279,7 @@ TCS
 HDFC Bank
 …
 
-— or paste a CSV with Name / NSE Code columns —"></textarea></div>
+or paste a CSV with Name / NSE Code columns"></textarea></div>
       <div id="ldMsg" class="ldmsg"></div>
     </div>
     <div class="mf">
@@ -311,14 +312,14 @@ async function submitLoader(){
   const tok = $('#ldTok').value.trim();
   const entries = parseLoaderText($('#ldText').value);
   const msg = $('#ldMsg');
-  if(!entries.length){ msg.innerHTML = `<span class="srcbad">Nothing to load — paste at least one company.</span>`; return; }
+  if(!entries.length){ msg.innerHTML = `<span class="srcbad">Nothing to load. Paste at least one company.</span>`; return; }
   save(LS.tok, tok);
   msg.innerHTML = `<span class="spinner"></span> Loading ${entries.length} rows…`;
   try{
     const r = await fetch(`${API}/api/admin/load`, { method:'POST', headers:{'content-type':'application/json','x-admin-token':tok}, body: JSON.stringify({screenId, entries, replace:true}) });
     const data = await r.json();
     if(!r.ok) throw new Error(data.error||'Failed');
-    msg.innerHTML = `<span class="srcok">Loaded ${data.loaded} into ${esc(screenId)} (total ${data.total}).${data.protected?'':' ⚠ No ADMIN_TOKEN set — anyone can write. Set one (README) to lock this.'}</span>`;
+    msg.innerHTML = `<span class="srcok">Loaded ${data.loaded} into ${esc(screenId)} (total ${data.total}).${data.protected?'':' ⚠ No ADMIN_TOKEN set, anyone can write. Set one (README) to lock this.'}</span>`;
     state.screens=null; await ensureScreens(true);
   }catch(e){ msg.innerHTML = `<span class="srcbad">${esc(e.message)}</span>`; }
 }
@@ -481,14 +482,14 @@ function renderDetailBody(){
     } else {
       html = W(`<h3>Industry &amp; Peers</h3><p class="note">How it stacks up against companies in the same business.</p>
         ${st.sector?`<p class="bodytext">Sector: <b>${esc(st.sector)}</b></p>`:''}
-        ${pending('Peer comparison is loaded from the company’s Screener page. Screener loads its peer table dynamically, so it may not always be captured — open the Screener link on the card to see the full peer set, or hit refresh.')}`);
+        ${pending('Peer comparison loads from the company’s Screener page. Screener builds it dynamically, so it may not always be captured. Open the Screener link on the card, or hit refresh.')}`);
     }
   }
   else if(sec==='growth'){
     const r = d.ranges||{};
     const blocks = ['Compounded Sales Growth','Compounded Profit Growth','Return on Equity','Stock Price CAGR']
       .filter(k=>r[k]).map(k=>`<div class="growthcard"><h4 class="subh">${esc(k)}</h4>${smallTable(r[k])}</div>`).join('');
-    html = W(`<h3>Growth &amp; Profitability</h3><p class="note">Is it growing — and does growth actually earn returns?</p>
+    html = W(`<h3>Growth &amp; Profitability</h3><p class="note">Is it growing, and does that growth earn returns?</p>
       <div class="ratio-grid">
         <div class="rt"><div class="k">Sales CAGR</div><div class="v">${num(st.sales_cagr,'%')}</div></div>
         <div class="rt"><div class="k">Profit CAGR</div><div class="v">${num(st.profit_cagr,'%')}</div></div>
@@ -535,14 +536,14 @@ function renderDetailBody(){
   else if(sec==='mgmt'){
     html = W(`<h3>Management &amp; Governance</h3><p class="note">Integrity, capital allocation, and delivery vs promises.</p>
       ${pending('Management quality is a judgement call. Use the pros/cons (Financial Health), the shareholding trend (Ownership), and the concall notes, plus the company’s annual report on Screener, to assess capital allocation and governance. Capture your read in My Thesis.')}
-      ${st.promoter!=null?`<div class="flags"><div class="flag ${st.promoter>=50?'ok':'watch'}"><div class="ic">${st.promoter>=50?'✓':'!'}</div><div class="tx">Promoter holding ${num(st.promoter,'%')} — ${st.promoter>=50?'skin in the game.':'lower promoter stake; check trend & pledging.'}</div></div></div>`:''}`);
+      ${st.promoter!=null?`<div class="flags"><div class="flag ${st.promoter>=50?'ok':'watch'}"><div class="ic">${st.promoter>=50?'✓':'!'}</div><div class="tx">Promoter holding ${num(st.promoter,'%')}. ${st.promoter>=50?'skin in the game.':'lower promoter stake; check trend & pledging.'}</div></div></div>`:''}`);
   }
   else if(sec==='concall'){
     html = W(`<h3>Concall &amp; Filings Digest</h3><p class="note">Earnings-call & annual-report highlights.</p>
-      ${pending('Concall transcript summaries need a separate text pipeline (the transcripts live as PDFs on Screener/BSE). Pros & cons under Financial Health already capture Screener’s auto-generated highlights. You can wire an AI summary step here later — see the README.')}`);
+      ${pending('Concall transcript summaries need a separate text pipeline (the transcripts live as PDFs on Screener/BSE). Pros & cons under Financial Health already capture Screener’s auto-generated highlights. You can wire an AI summary step here later. See the README.')}`);
   }
   else if(sec==='charts'){
-    html = W(`<h3>Charts</h3><p class="note">Live price from Yahoo Finance — in-app, so you never click another link.</p>
+    html = W(`<h3>Charts</h3><p class="note">Live price from Yahoo Finance, shown in app.</p>
       <div class="chartbox">
         <div class="chartbar">
           <div style="font-weight:700;font-size:14px" id="chTitle">${esc(st.symbol)} · Price</div>
@@ -553,13 +554,13 @@ function renderDetailBody(){
       </div>`);
   }
   else if(sec==='risks'){
-    html = W(`<h3>Risks &amp; Bear Case</h3><p class="note">What would make this a bad investment — stated plainly.</p>
+    html = W(`<h3>Risks &amp; Bear Case</h3><p class="note">What would make this a bad investment.</p>
       ${d.cons?.length?`<div class="flags">${d.cons.map(r=>`<div class="flag watch"><div class="ic">!</div><div class="tx">${esc(r)}</div></div>`).join('')}</div>`:pending('Screener’s cons (the bear flags) load here when reachable.')}`);
   }
   else if(sec==='thesis'){
     const t = state.theses[sym] || {thesis:'', wrong:'', conviction:6};
-    html = W(`<h3>My Thesis &amp; Conviction</h3><p class="note">Your call, in your words — the output of the whole flow. Saved on this device.</p>
-      <div class="field"><label>In one paragraph — what am I buying, and why is it mispriced?</label>
+    html = W(`<h3>My Thesis &amp; Conviction</h3><p class="note">Your call, in your words. Saved on this device.</p>
+      <div class="field"><label>In one paragraph: what am I buying, and why is it mispriced?</label>
         <textarea id="th_thesis" rows="4" placeholder="e.g. A debt-free compounder where the market is under-pricing the specialty ramp…">${esc(t.thesis)}</textarea></div>
       <div class="field"><label>What would prove me wrong? (2–3 triggers)</label>
         <textarea id="th_wrong" rows="3" placeholder="e.g. USFDA action at a key plant; launches slip two quarters…">${esc(t.wrong)}</textarea></div>
@@ -655,16 +656,15 @@ function toast(msg){
 
 const INFO = {
   about:{ title:'About Meridian', body:`
-    <p><b>Markets are noisy.</b> Prices flash, narratives churn, and conviction is usually the first casualty. A <b>meridian</b> is the fixed line navigators steer by, whatever the weather — and that's the role this tool plays. Meridian is <b>a fixed direction in a noisy market</b>: a personal stock picker for long-term investors who care more about understanding a business than reacting to its ticker.</p>
-    <h4>How it thinks</h4>
-    <p>Conviction is built in two passes. First a disciplined <b>quantitative shortlist</b> — independent Screener.in screens, each checking one lens (integrity, quality, growth, value), and the <b>exact overlap</b> where they all agree. Then a structured <b>qualitative judgement</b> layer: business and moat, peers, financial health, valuation, ownership, management, risks — pulled live, only for the names you choose to study.</p>
-    <p class="muted">Personal, non-commercial tool. Screen and company data are read on demand from Screener.in; live price and charts from Yahoo Finance. Built for the long term.</p>` },
+    <p><b>A fixed direction in a noisy market.</b> A meridian is the line navigators steer by, whatever the weather. Same idea here: stay oriented toward quality instead of reacting to the ticker.</p>
+    <p>I built this for myself. Every month I put money to work, and I was running the same routine by hand across a dozen tabs. Meridian puts that whole process in one place: screen, intersect, judge, decide. It started as a fun side project and is now something I and a few friends and family use every month.</p>
+    <p>Always open to feedback, whether that is a better way to run the monthly plan or a feature or bug in the picker.</p>
+    <p class="muted">Built by Ansh Dwivedi. Personal and non-commercial. Screen and company data from Screener.in; price and charts from Yahoo Finance.</p>` },
   howto:{ title:'How to use Meridian', body:`
-    <h4>1 · Screen</h4><p>Open <b>Quantitative</b>. Each card is a screen with a clear job and the exact formula behind it. Tap a card to fetch its ranked list live from Screener (cached briefly after the first read).</p>
-    <h4>2 · Intersect</h4><p>Tick 2 or more screens, hit <b>Find intersection</b>, and choose how deep to read (25 → 200). Meridian fetches just those screens to that depth and returns the names that appear in <b>every</b> one — computed exactly, and honestly <b>0</b> when nothing overlaps.</p>
-    <h4>3 · Analyse</h4><p>Hit <b>Analyse</b> on any survivor to send it to <b>Qualitative</b>.</p>
-    <h4>4 · Judge</h4><p>Open a stock to pull its full picture on demand — snapshot, business, peers, growth, financial health, valuation, ownership, management, concall, a live chart, and risks. Write your thesis, set a conviction score, make the call.</p>
-    <p class="muted">If Screener ever blocks the server, use <b>Load manually</b> on the Quantitative tab as a fallback.</p>` },
+    <h4>1 · Screen</h4><p>Open <b>Quantitative</b>. Each card shows its exact formula. Tap one to pull its live ranked list.</p>
+    <h4>2 · Intersect</h4><p>Tick two or more screens, hit <b>Find intersection</b>, and pick how deep to read (25 to 200). You get the names in <b>every</b> selected screen, computed exactly, and <b>0</b> when nothing overlaps.</p>
+    <h4>3 · Analyse</h4><p>Hit <b>Analyse</b> on a name to send it to <b>Qualitative</b>.</p>
+    <h4>4 · Judge</h4><p>Open a stock for the full picture on demand: business, peers, financials, valuation, ownership, management, a live chart, risks. Write your thesis, set a conviction score, decide.</p>` },
 };
 function openInfo(k){
   const o=INFO[k];

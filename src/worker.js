@@ -42,36 +42,36 @@ const ALLOWED_LIMITS = [25, 50, 100, 150, 200];
 // public Screener screen page we read on demand.
 const SCREENS = [
   { id:'piotroski', name:'Piotroski Scan', lens:'integrity',
-    gauge:'Financial strength & earnings integrity — are the books clean, profitable, and improving?',
-    formula:'F-Score = Σ of 9 tests across <b>Profitability</b> (+ve PAT, +ve CFO, ↑ROA, CFO &gt; PAT), <b>Leverage</b> (↓LT-debt ratio, ↑current ratio, no dilution) &amp; <b>Efficiency</b> (↑gross margin, ↑asset turnover). Keep <b>F = 9</b>.',
+    gauge:'Clean, improving books.',
+    formula:'<b>Piotroski score &gt; 7.</b> F-Score adds nine pass/fail tests on profitability, leverage and efficiency; 9 is best.',
     url:'https://www.screener.in/screens/2/piotroski-scan/' },
   { id:'magic', name:'Magic Formula', lens:'value',
-    gauge:'Cheap and good at once — high return on capital bought at a high earnings yield.',
-    formula:'Combined rank of <b>Earnings Yield = EBIT / EV</b> and <b>Return on Capital = EBIT / (Net WC + Net Fixed Assets)</b>. Lower combined rank = better.',
+    gauge:'Cheap and high-return together.',
+    formula:'<b>Return on invested capital &gt; 25%</b> AND <b>Earnings yield &gt; 15%</b> AND Book value &gt; 0 AND Market cap &gt; ₹15 cr.',
     url:'https://www.screener.in/screens/59/magic-formula/' },
   { id:'coffee', name:'Coffee Can Portfolio', lens:'quality',
-    gauge:'Consistent compounders — a decade of steady growth and high returns, no bad years.',
-    formula:'For each of last <b>10 years</b>: Sales growth ≥ <b>10%</b> AND ROCE ≥ <b>15%</b>. Market-cap filter applied.',
+    gauge:'Decade-long consistent compounders.',
+    formula:'<b>Sales growth &gt; 10%</b> AND <b>10-yr sales growth &gt; 10%</b> AND <b>ROE &gt; 15%</b> AND <b>10-yr avg ROCE &gt; 15%</b> AND Market cap &gt; ₹1,000 cr.',
     url:'https://www.screener.in/screens/57601/coffee-can-portfolio/' },
   { id:'garp', name:'High Growth · High RoE · Low PE', lens:'garp',
-    gauge:'Growth at a reasonable price — fast, profitable, and not yet expensive.',
-    formula:'<b>Profit CAGR &gt; 20%</b> AND <b>ROE &gt; 18%</b> AND <b>PE &lt; median PE</b> (cheap vs its own history).',
+    gauge:'Fast growth, still cheap.',
+    formula:'<b>YoY quarterly sales growth &gt; 40%</b> AND <b>YoY quarterly profit growth &gt; 40%</b> AND <b>3-yr avg ROCE &gt; 30%</b> AND <b>P/E &lt; 6</b>.',
     url:'https://www.screener.in/screens/18/high-growth-high-roe-low-pe/' },
   { id:'value', name:'Value Stocks (Quality)', lens:'quality',
-    gauge:'Genuinely good businesses — fat margins, high returns, little debt.',
-    formula:'<b>OPM &gt; 15%</b> AND <b>ROCE &gt; 18%</b> AND <b>Debt/Equity &lt; 0.5</b>.',
+    gauge:'High-quality, low-debt businesses.',
+    formula:'<b>EPS last year &gt; 20</b> AND <b>Debt/Equity &lt; 0.1</b> AND <b>5-yr avg ROCE &gt; 35%</b> AND <b>5-yr OPM &gt; 15%</b> AND Market cap &gt; ₹500 cr.',
     url:'https://www.screener.in/screens/184/value-stocks/' },
   { id:'capex', name:'Capacity Expansion', lens:'balance',
-    gauge:'Building for the future — heavy capex that should feed tomorrow’s growth.',
-    formula:'Net block <b>doubled over 3 yrs</b> OR Gross block + CWIP <b>up &gt; 50% in 1 yr</b>.',
+    gauge:'Building big new capacity.',
+    formula:'(<b>3-yr sales growth &gt; 12%</b> AND Net block &gt; 2&times; its level 3 years ago) OR (Net block + CWIP &gt; 1.5&times; last year). Plus Sales &gt; ₹25 cr, Debt/Equity &lt; 3, Market cap &gt; ₹25 cr.',
     url:'https://www.screener.in/screens/97687/capacity-expansion/' },
   { id:'debt', name:'Debt Reduction', lens:'balance',
-    gauge:'De-leveraging stories — falling debt while the business keeps growing.',
-    formula:'<b>Debt/Equity falling</b> across recent years; debt down even as profit / assets rise.',
+    gauge:'Cutting debt while still investing.',
+    formula:'<b>Debt &lt; debt 3 years ago</b> AND <b>Gross block &gt; 1.2&times; last year.</b>',
     url:'https://www.screener.in/screens/126864/debt-reduction/' },
   { id:'graham', name:'Low on 10-Yr Avg Earnings', lens:'value',
-    gauge:'Deep value, Graham-style — price low against normalised, decade-averaged earnings.',
-    formula:'Price low vs <b>10-year average EPS</b> (normalised P/E). Sales &gt; <b>₹250 cr</b> filter.',
+    gauge:'Cheap on 10-year earnings.',
+    formula:'<b>Market cap / 10-yr avg earnings &lt; 15</b> AND 3-yr avg dividend payout &gt; 20% AND Debt/Equity &lt; 0.2 AND 7-yr avg ROCE &gt; 20%.',
     url:'https://www.screener.in/screens/6994/low-on-10-year-average-earnings/' },
 ];
 const SCREEN_BY_ID = Object.fromEntries(SCREENS.map((s, i) => [s.id, { ...s, sort_order: i }]));
@@ -241,7 +241,8 @@ async function handleApi(request, env, url) {
     const meta = SCREEN_BY_ID[decodeURIComponent(mDebug[1])] || SCREENS[0];
     const direct = `${meta.url.replace(/\?.*$/, '')}?limit=50&page=1`;
     const target = PROXY ? PROXY + encodeURIComponent(direct) : direct;
-    const info = { screen: meta.id, url: direct, viaProxy: !!PROXY };
+    let proxyHost = null; try { if (PROXY) proxyHost = new URL(PROXY).host; } catch {}
+    const info = { screen: meta.id, url: direct, viaProxy: !!PROXY, proxyHost };
     try {
       const r = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow' });
       const body = await r.text();
@@ -276,20 +277,18 @@ async function ensureScreensSeeded(db) {
   await db.batch(stmts);
 }
 
-// Ensure a screen has fresh-enough data to depth `limit`. Returns a status obj.
-async function ensureScreen(db, meta, limit, force) {
-  const row = await db.prepare(`SELECT updated_at, (SELECT COUNT(*) FROM screen_entries WHERE screen_id=?) n FROM screens WHERE id=?`).bind(meta.id, meta.id).first();
-  const fresh = row && row.updated_at && (Date.now() - row.updated_at) < SCREEN_TTL_MS;
-  const deep = row && row.n >= limit;
-  if (!force && fresh && deep) return { from: 'cache', count: row.n, updated_at: row.updated_at };
+// ALWAYS fetch fresh — no caching (configured for real-time). On a fetch/parse
+// failure, fall back to whatever rows are already in D1 so the UI degrades
+// instead of breaking.
+async function ensureScreen(db, meta, limit) {
   try {
     const entries = await fetchScreen(meta, limit);
-    if (!entries.length) throw new Error('no rows parsed from Screener (markup may have changed, or page is empty)');
+    if (!entries.length) throw new Error('proxy/Screener returned a page but 0 rows parsed (see /api/debug)');
     await writeScreenEntries(db, meta, entries);
-    return { from: 'screener', count: entries.length, updated_at: Date.now() };
+    return { from: 'live', count: entries.length, updated_at: Date.now() };
   } catch (e) {
-    // Fall back to whatever is cached (possibly stale / empty).
-    return { from: row && row.n ? 'stale-cache' : 'none', count: (row && row.n) || 0, updated_at: row && row.updated_at, error: String(e.message || e) };
+    const row = await db.prepare(`SELECT updated_at, (SELECT COUNT(*) FROM screen_entries WHERE screen_id=?) n FROM screens WHERE id=?`).bind(meta.id, meta.id).first();
+    return { from: row && row.n ? 'stale' : 'none', count: (row && row.n) || 0, updated_at: row && row.updated_at, error: String(e.message || e) };
   }
 }
 
@@ -361,7 +360,7 @@ function parseScreenTable(html) {
   const rows = [];
   for (const m of table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const tr = m[1];
-    const link = /href="\/company\/([^/"]+)\/?[^"]*"[^>]*>([\s\S]*?)<\/a>/i.exec(tr);
+    const link = /href="\/company\/(?:id\/)?([^/"]+)\/?[^"]*"[^>]*>([\s\S]*?)<\/a>/i.exec(tr);
     if (!link) continue;                       // header / spacer rows have no company link
     const code = decodeURIComponent(link[1]).trim();
     const company = decodeEntities(stripTags(link[2])).trim();
@@ -386,9 +385,7 @@ function parseScreenTable(html) {
 async function ensureCompany(db, symbol, force) {
   const row = await db.prepare(`SELECT symbol, ticker, fetched_at FROM stocks WHERE symbol=?`).bind(symbol).first();
   if (!row) return { from: 'none', error: 'unknown symbol — add it from a screen first' };
-  const fresh = row.fetched_at && (Date.now() - row.fetched_at) < COMPANY_TTL_MS;
-  if (!force && fresh) return { from: 'cache', fetched_at: row.fetched_at };
-  try {
+  try {  // always fetch fresh — no caching
     const html = await fetchText(`${SCREENER}/company/${encodeURIComponent(symbol)}/consolidated/`);
     const d = parseCompany(html);
     await db.prepare(`
@@ -478,7 +475,7 @@ function parseCompany(html) {
     const heads = [...(peersTable.match(/<thead[\s\S]*?<\/thead>/i)?.[0] || '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map((m) => decodeEntities(stripTags(m[1])).trim());
     const peers = [];
     for (const tr of peersTable.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
-      const link = /href="\/company\/([^/"]+)\/?[^"]*"[^>]*>([\s\S]*?)<\/a>/i.exec(tr[1]);
+      const link = /href="\/company\/(?:id\/)?([^/"]+)\/?[^"]*"[^>]*>([\s\S]*?)<\/a>/i.exec(tr[1]);
       if (!link) continue;
       const tds = [...tr[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((x) => decodeEntities(stripTags(x[1])).trim());
       peers.push({ symbol: decodeURIComponent(link[1]), company: decodeEntities(stripTags(link[2])).trim(), cells: tds });
