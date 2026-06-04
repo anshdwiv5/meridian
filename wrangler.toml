@@ -9,13 +9,11 @@ binding = "ASSETS"
 # Force /api/* to hit the Worker BEFORE static-asset handling.
 run_worker_first = ["/api/*"]
 
-# D1 (SQLite) database. After `wrangler d1 create meridian-db`, paste the
-# printed database_id below (it looks like a UUID).
+# D1 (SQLite) database.
 [[d1_databases]]
 binding = "DB"
 database_name = "meridian-db"
-database_id = "PASTE_YOUR_DATABASE_ID_HERE"
+database_id = "0c77fdeb-388e-4597-a876-9698240b7ec4"
 
-# Secret (do NOT put it here — set it with:  wrangler secret put ADMIN_TOKEN):
-#   ADMIN_TOKEN  protects the manual /api/admin/load fallback. If unset, that
-#   endpoint is open (fine for a private deploy, but the UI will warn you).
+# Secret (do NOT put it here — set with:  wrangler secret put ADMIN_TOKEN):
+#   ADMIN_TOKEN protects the manual /api/admin/load fallback.
