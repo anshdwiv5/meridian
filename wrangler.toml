@@ -1,0 +1,21 @@
+name = "meridian"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+# Static frontend in ./public is served directly; the Worker handles /api/*.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# Force /api/* to hit the Worker BEFORE static-asset handling.
+run_worker_first = ["/api/*"]
+
+# D1 (SQLite) database. After `wrangler d1 create meridian-db`, paste the
+# printed database_id below (it looks like a UUID).
+[[d1_databases]]
+binding = "DB"
+database_name = "meridian-db"
+database_id = "PASTE_YOUR_DATABASE_ID_HERE"
+
+# Secret (do NOT put it here — set it with:  wrangler secret put ADMIN_TOKEN):
+#   ADMIN_TOKEN  protects the manual /api/admin/load fallback. If unset, that
+#   endpoint is open (fine for a private deploy, but the UI will warn you).

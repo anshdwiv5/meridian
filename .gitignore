@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# wrangler / cloudflare local state
+.wrangler/
+.dev.vars
+wrangler.toml.bak
+
+# your private Screener.in exports + the seed generated from them
+data/*.csv
+seed.real.sql
+
+# os / editor
+.DS_Store
+*.log

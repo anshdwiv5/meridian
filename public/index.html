@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Meridian — a fixed direction in a noisy market</title>
+<meta name="description" content="Meridian — a personal long-term stock picker. Screen, intersect, judge." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <button class="brand" onclick="goHome()" aria-label="Meridian home">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="mg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="var(--accent-2)"/><stop offset="1" stop-color="var(--accent-deep)"/>
+          </linearGradient>
+        </defs>
+        <path d="M9 47 L24 14 L32 31 L40 14 L55 47 L45 47 L37 27 L32 37 L27 27 L19 47 Z" fill="url(#mg)"/>
+        <path d="M11 50 Q32 40 53 50 Q34 53 11 50 Z" fill="url(#mg)" opacity=".95"/>
+        <path d="M16 55 Q32 48 48 55 Q33 57 16 55 Z" fill="var(--accent)" opacity=".5"/>
+        <path d="M32 41 l1.5 4.5 4.5 1.5 -4.5 1.5 -1.5 4.5 -1.5 -4.5 -4.5 -1.5 4.5 -1.5 Z" fill="#fff"/>
+      </svg>
+      <span class="name">Meridian</span>
+    </button>
+    <nav class="topnav">
+      <button onclick="openInfo('howto')">How to Use</button>
+      <button onclick="openInfo('about')">About Meridian</button>
+      <button class="toggle" onclick="toggleTheme()" aria-label="Toggle theme" id="themeBtn"></button>
+    </nav>
+  </header>
+
+  <!-- TAB BANNER (separate, under the top bar) -->
+  <nav class="tabbar" aria-label="Sections">
+    <div class="tabbar-inner">
+      <button class="tab" data-view="insights" onclick="setView('insights')">Insights</button>
+      <button class="tab" data-view="quant" onclick="setView('quant')">Quantitative <span class="pip" id="pipQuant">0</span></button>
+      <button class="tab" data-view="qual" onclick="setView('qual')">Qualitative <span class="pip" id="pipQual">0</span></button>
+    </div>
+  </nav>
+
+  <main class="stage">
+
+    <!-- HOME / HERO (its own view — never shown when a tab is clicked) -->
+    <section class="view show" id="view-home">
+      <div class="hero">
+        <div class="ring"></div>
+        <div class="eyebrow"><span class="dot"></span> Personal stock picker</div>
+        <h1>A fixed direction in a <span class="grad">noisy market</span></h1>
+        <p class="sub">Screen, intersect, judge — end to end.</p>
+        <div class="cta">
+          <button class="btn btn-primary" onclick="setView('quant')">Pick Stocks
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- INSIGHTS (no assumed content) -->
+    <section class="view" id="view-insights">
+      <div class="page">
+        <div class="comingsoon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Insights</h2>
+          <p>This will be available to you soon.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- QUANTITATIVE -->
+    <section class="view" id="view-quant">
+      <div class="page">
+        <p class="sec-head">Shortlist</p>
+        <h2 class="h2">Screens that each check one thing well.</h2>
+        <p class="lead">Tap a screen to fetch its ranked list live from Screener. Select 2 or more, then find the intersection — the names that survive every angle at once.</p>
+        <div class="quanttools"><button class="ghostbtn" onclick="openLoader()">⇪ Load a screen manually</button><span class="ghosthint">fallback if Screener blocks the server</span></div>
+
+        <div class="legend" id="legend"></div>
+        <div class="screen-grid" id="screenGrid"></div>
+
+        <div class="actionbar">
+          <div class="info"><b id="selCount">0</b> screens selected · select 2+ to intersect</div>
+          <div class="right">
+            <button class="btn-sm btn-clear" onclick="clearSel()">Clear</button>
+            <button class="btn-sm btn-go" id="interBtn" onclick="openInterDialog()" disabled>Find intersection</button>
+          </div>
+        </div>
+
+        <div id="screenListMount"></div>
+        <div id="interMount"></div>
+      </div>
+    </section>
+
+    <!-- QUALITATIVE -->
+    <section class="view" id="view-qual">
+      <div class="page">
+        <div id="qualList">
+          <p class="sec-head">Judgement</p>
+          <h2 class="h2">Where conviction gets built.</h2>
+          <p class="lead">Every stock you add from the shortlist lands here. Open one and Meridian pulls the full picture on demand — business, peers, financials, ownership, management, risks, and a live chart.</p>
+          <div id="slMount"></div>
+        </div>
+        <div class="detail" id="qualDetail" style="display:none"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="footnote" id="footnote">Meridian</div>
+</div>
+
+<!-- OVERLAY / MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+-- (retired) Meridian no longer ships fabricated sample data.
+-- Screen lists are fetched live from Screener.in on demand. See README.
