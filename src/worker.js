@@ -21,6 +21,17 @@
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const SCREENER = 'https://www.screener.in';
+// Full browser-like headers — Screener (and many sites) reject bare requests.
+const BROWSER_HEADERS = {
+  'user-agent': UA,
+  'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'accept-language': 'en-IN,en-GB;q=0.9,en;q=0.8',
+  'referer': 'https://www.screener.in/explore/',
+  'upgrade-insecure-requests': '1',
+  'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate', 'sec-fetch-site': 'none', 'sec-fetch-user': '?1',
+  'sec-ch-ua': '"Chromium";v="124", "Not:A-Brand";v="99"', 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"',
+  'cache-control': 'no-cache', 'pragma': 'no-cache',
+};
 const PER_PAGE = 50;                       // Screener supports ?limit=50 logged-out
 const MAX_PAGES = 8;                       // safety cap → up to 400 rows/screen
 const SCREEN_TTL_MS = 12 * 3600 * 1000;    // re-fetch a screen at most this often
@@ -89,6 +100,7 @@ async function handleApi(request, env, url) {
   const p = url.pathname;
   const db = env.DB;
   if (!db) return json({ error: 'D1 binding "DB" is not configured. See README step 3.' }, 500);
+  PROXY = env.SCRAPER_PROXY || '';
   await ensureScreensSeeded(db);
 
   // GET /api/health
@@ -219,6 +231,36 @@ async function handleApi(request, env, url) {
     })));
     const c = await db.prepare(`SELECT COUNT(*) n FROM screen_entries WHERE screen_id=?`).bind(meta.id).first();
     return json({ ok: true, screenId: meta.id, loaded: rows.length, total: c.n, protected: auth.protected });
+  }
+
+  // GET /api/debug/:id  -> show EXACTLY what Cloudflare gets from Screener.
+  // Used to tell apart an IP/bot block (403/503/challenge) from a parser miss
+  // (200 with company links but 0 parsed rows). Remove once fetch is confirmed.
+  const mDebug = p.match(/^\/api\/debug\/([^/]+)$/);
+  if (mDebug && request.method === 'GET') {
+    const meta = SCREEN_BY_ID[decodeURIComponent(mDebug[1])] || SCREENS[0];
+    const direct = `${meta.url.replace(/\?.*$/, '')}?limit=50&page=1`;
+    const target = PROXY ? PROXY + encodeURIComponent(direct) : direct;
+    const info = { screen: meta.id, url: direct, viaProxy: !!PROXY };
+    try {
+      const r = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow' });
+      const body = await r.text();
+      const rows = parseScreenTable(body);
+      const ci = body.indexOf('/company/');
+      Object.assign(info, {
+        status: r.status, ok: r.ok, statusText: r.statusText,
+        contentType: r.headers.get('content-type'), server: r.headers.get('server'),
+        cfRay: r.headers.get('cf-ray'), cfMitigated: r.headers.get('cf-mitigated'),
+        bodyLength: body.length,
+        looksLikeChallenge: /just a moment|cf-browser-verification|challenge-platform|captcha/i.test(body),
+        companyLinks: (body.match(/\/company\//g) || []).length,
+        tableCount: (body.match(/<table/gi) || []).length,
+        parsedRows: rows.length, sample: rows.slice(0, 2),
+        bodyHead: body.slice(0, 1500),
+        aroundCompany: ci >= 0 ? body.slice(Math.max(0, ci - 300), ci + 500) : '(no /company/ link in body)',
+      });
+    } catch (e) { info.error = String((e && e.message) || e); }
+    return json(info);
   }
 
   return json({ error: 'not found' }, 404);
@@ -479,12 +521,15 @@ async function yahooQuote(code) {
 
 /* ============================ helpers ============================ */
 
+// Optional scraping-proxy escape hatch. Set the SCRAPER_PROXY secret to a
+// template that takes a URL-encoded target (e.g. a ScrapingBee/ScraperAPI URL
+// ending in "&url=") to route Screener fetches through residential/rotating IPs
+// and bypass datacenter blocks. Set per request from env in handleApi.
+let PROXY = '';
 async function fetchText(u) {
-  const r = await fetch(u, {
-    headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', 'accept-language': 'en-IN,en;q=0.9' },
-    cf: { cacheTtl: 600, cacheEverything: true },
-  });
-  if (!r.ok) throw new Error(`Screener returned ${r.status} (it may be rate-limiting or blocking server IPs)`);
+  const target = PROXY ? PROXY + encodeURIComponent(u) : u;
+  const r = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow' });
+  if (!r.ok) throw new Error(`Screener returned HTTP ${r.status}`);
   return await r.text();
 }
 
@@ -518,4 +563,4 @@ function numOrNull(v) {
 function titleCase(s) { return String(s || '').replace(/\b\w/g, (c) => c.toUpperCase()); }
 
 // Named exports for unit tests (no effect on the Worker runtime — these are pure).
-export { parseScreenTable, parseCompany, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities };
+export { SCREENS, parseScreenTable, parseCompany, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities, BROWSER_HEADERS };
