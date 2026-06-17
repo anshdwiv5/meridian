@@ -234,6 +234,21 @@ async function handleApi(request, env, url) {
     }
   }
 
+  // GET /api/quote/:symbol  -> fresh live price for the research view (client polls ~5s).
+  // Briefly edge-cached so many pollers don't hammer Yahoo, while staying near-live.
+  const mQuote = p.match(/^\/api\/quote\/([^/]+)$/);
+  if (mQuote && request.method === 'GET') {
+    const symbol = decodeURIComponent(mQuote[1]);
+    const s = await db.prepare(`SELECT ticker FROM stocks WHERE symbol = ?`).bind(symbol).first();
+    const ticker = (s && s.ticker) || symbol;
+    try {
+      const q = await yahooLive(ticker);
+      return json({ symbol, ticker, ...q });
+    } catch (e) {
+      return json({ symbol, ticker, error: String(e.message || e) }, 200);
+    }
+  }
+
   // ---- Fallback / manual load (used only if Screener blocks the Worker IP) ----
   // POST /api/admin/load  header: x-admin-token
   // body: { screenId, entries:[{rank,symbol,company,metric_label?,metric_value?,ticker?,sector?}], replace?:true }
@@ -737,6 +752,31 @@ async function yahooQuote(code) {
   // Use the chart endpoint's meta for a reliable last price without crumb auth.
   const d = await yahooChart(code, '5d', '1d');
   return { ticker: d.ticker, price: d.price ?? (d.points.at(-1)?.c ?? null), prevClose: d.prevClose, currency: d.currency };
+}
+
+// Near-live quote for the research view's 5s polling. 1-minute candles give the
+// freshest regularMarketPrice; a tiny edge cache shields Yahoo from many pollers.
+async function yahooLive(code) {
+  const ticker = /\.(NS|BO)$/i.test(code) ? code : codeToTicker(code);
+  const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1m`;
+  const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/json' }, cf: { cacheTtl: 5, cacheEverything: true } });
+  if (!r.ok) throw new Error('yahoo quote ' + r.status);
+  const j = await r.json();
+  const res = j?.chart?.result?.[0];
+  if (!res) throw new Error('no quote for ' + ticker);
+  const m = res.meta || {};
+  const closes = (res.indicators?.quote?.[0]?.close || []).filter((x) => x != null);
+  const price = m.regularMarketPrice ?? (closes.length ? closes[closes.length - 1] : null);
+  const prevClose = m.chartPreviousClose ?? m.previousClose ?? null;
+  const changePct = (price != null && prevClose) ? (price / prevClose - 1) * 100 : null;
+  return {
+    ticker, price, prevClose,
+    change: (price != null && prevClose != null) ? Math.round((price - prevClose) * 100) / 100 : null,
+    changePct: changePct != null ? Math.round(changePct * 100) / 100 : null,
+    dayHigh: m.regularMarketDayHigh ?? null, dayLow: m.regularMarketDayLow ?? null,
+    high_52w: m.fiftyTwoWeekHigh ?? null, low_52w: m.fiftyTwoWeekLow ?? null,
+    volume: m.regularMarketVolume ?? null, currency: m.currency || 'INR', ts: Date.now(),
+  };
 }
 
 /* ============================ data packet assembly ============================ */

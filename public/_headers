@@ -1,0 +1,16 @@
+# Keep the app shell and service worker revalidated so a new deploy lands without
+# reinstalling the PWA. (Cloudflare Workers static assets honor this file.)
+/sw.js
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache
+/manifest.json
+  Cache-Control: no-cache
+/app.js
+  Cache-Control: no-cache
+/styles.css
+  Cache-Control: no-cache
+/logo.svg
+  Cache-Control: no-cache

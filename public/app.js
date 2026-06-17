@@ -16,33 +16,39 @@ const LENS = {
   balance:  {c:'#c98a12', label:'Balance sheet'},
 };
 
+// Icons — one consistent set (Lucide, MIT). 24px grid, 2px stroke, round joins,
+// inlined so the PWA stays offline-capable. Same keys as before, so every call
+// site updates at once. Sized by their container's `svg` CSS rule.
+const LU = (p, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const I = {
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17.5 19 7"/></svg>',
-  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-  star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.9z"/></svg>',
-  starF:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.9z"/></svg>',
-  refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg>',
-  back:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
-  sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/></svg>',
-  moon:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8Z"/></svg>',
-  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>',
-  spark:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6z"/></svg>',
-  compass:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z" fill="currentColor" stroke="none"/></svg>',
-  ext:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5M19 5l-9 9M11 5H5v14h14v-6"/></svg>',
-  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
+  check: LU('<path d="M20 6 9 17l-5-5"/>', 2.4),
+  plus: LU('<path d="M5 12h14M12 5v14"/>', 2.2),
+  star: LU('<path d="M11.5 3.3a.55.55 0 0 1 1 0l2.16 4.5 4.95.66a.55.55 0 0 1 .31.95l-3.6 3.4.9 4.9a.55.55 0 0 1-.8.58L12 16.9l-4.42 2.4a.55.55 0 0 1-.8-.58l.9-4.9-3.6-3.4a.55.55 0 0 1 .31-.95l4.95-.66z"/>', 1.7),
+  starF: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M11.5 3.3a.55.55 0 0 1 1 0l2.16 4.5 4.95.66a.55.55 0 0 1 .31.95l-3.6 3.4.9 4.9a.55.55 0 0 1-.8.58L12 16.9l-4.42 2.4a.55.55 0 0 1-.8-.58l.9-4.9-3.6-3.4a.55.55 0 0 1 .31-.95l4.95-.66z"/></svg>',
+  refresh: LU('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>'),
+  back: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+  sun: LU('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  moon: LU('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'),
+  doc: LU('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M16 13H8M16 17H8M10 9H8"/>', 1.9),
+  spark: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.9 5.6a2 2 0 0 0 1.3 1.3l5.6 1.9-5.6 1.9a2 2 0 0 0-1.3 1.3L12 20.1l-1.9-5.6a2 2 0 0 0-1.3-1.3L3.2 11.3l5.6-1.9a2 2 0 0 0 1.3-1.3z"/></svg>',
+  compass: LU('<circle cx="12" cy="12" r="10"/><path d="m15.5 8.5-2.6 6.1-6.1 2.6 2.6-6.1z"/>', 1.9),
+  ext: LU('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
+  upload: LU('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>'),
 };
 
 const $ = (s) => document.querySelector(s);
 const SKEY = 'meridian.session.v3';
 
 const state = {
-  step: 1, theme: 'light',
+  step: 0, theme: 'light',
   // step 1
   screens: null, screensLoading: false, openScreen: null,
   selected: new Set(), interN: null, inter: null, rowIndex: {}, refresh: false,
   // step 2
   researchList: [], allocation: [], activeSymbol: null, activeTab: 'data',
   packetCache: {}, thesisCache: {}, thesisLoading: {}, chartRange: '1y',
+  // live quote polling
+  basePrice: {}, liveTimer: null, liveAt: 0, activeDocs: [],
 };
 
 /* ---------- session persistence (clears on tab close) ---------- */
@@ -63,7 +69,7 @@ function restore() {
     state.thesisCache = s.theses || {};
     state.activeSymbol = s.activeSymbol || null;
     state.activeTab = s.activeTab || 'data';
-    state.step = s.step || 1;
+    state.step = (s.step != null ? s.step : 0);
     state.theme = s.theme || 'light';
   } catch {}
 }
@@ -80,10 +86,14 @@ function ago(ms) { if (!ms) return 'never'; const s = (Date.now() - ms) / 1000; 
 /* ============================ NAVIGATION ============================ */
 function goStep(n) {
   state.step = n; persist();
+  const hero = $('#hero');
+  document.body.classList.toggle('hero-on', n === 0);
+  if (hero) hero.classList.toggle('show', n === 0);
   document.querySelectorAll('.view').forEach((v) => v.classList.remove('show'));
-  $('#view-' + n).classList.add('show');
+  if (n >= 1) $('#view-' + n).classList.add('show');
   document.querySelectorAll('.step').forEach((b) => b.classList.toggle('on', +b.dataset.step === n));
   window.scrollTo({ top: 0, behavior: 'auto' });
+  if (n !== 2) stopLive();                          // live polling only while researching
   if (n === 1) ensureScreens();
   if (n === 2) { enterResearch(); const rn = $('#rsNext'); if (rn) rn.style.display = state.researchList.length ? 'flex' : 'none'; }
   if (n === 3) renderAllocation();
@@ -355,6 +365,7 @@ async function selectStock(symbol) {
   state.activeSymbol = symbol; persist();
   renderSidebar();                  // re-highlight the active item
   setTab(state.activeTab, true);    // render the current tab for the new stock
+  startLive(symbol);                // begin live-price polling for this name
 }
 function setTab(tab, keep) {
   state.activeTab = tab; persist();
@@ -372,13 +383,18 @@ async function ensureStock(symbol, force) {
 function renderHead(d) {
   const st = (d && d.stock) || state.researchList.find((x) => x.symbol === state.activeSymbol) || { symbol: state.activeSymbol, company: state.activeSymbol };
   const live = d && d.live;
+  const base = (live && live.price != null) ? live.price : (st.price != null ? st.price : null);
+  if (base != null) state.basePrice[state.activeSymbol] = base;     // reference for live scaling
   let price = '';
   if (live && live.price != null) {
     const chg = live.prevClose != null ? (live.price / live.prevClose - 1) * 100 : null;
-    price = `<div class="sd-pricewrap"><div class="sd-price">${inr(live.price)}</div><div class="sd-chg ${chg == null ? '' : (chg >= 0 ? 'up' : 'down')}">${chg == null ? 'live' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%')}</div></div>`;
-  } else if (st.price) price = `<div class="sd-pricewrap"><div class="sd-price">${inr(st.price)}</div><div class="sd-chg">last close</div></div>`;
+    price = `<div class="sd-pricewrap">
+      <div class="sd-price" id="livePrice">${inr(live.price)}</div>
+      <div class="sd-chg ${chg == null ? '' : (chg >= 0 ? 'up' : 'down')}" id="liveChg">${chg == null ? '—' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%')}</div>
+      <span class="livetag"><span class="livedot"></span><span id="liveAgo">live</span></span></div>`;
+  } else if (st.price) price = `<div class="sd-pricewrap"><div class="sd-price" id="livePrice">${inr(st.price)}</div><div class="sd-chg" id="liveChg">last close</div></div>`;
   $('#rsHead').innerHTML = `<div class="sd-name">${esc(st.company)}</div>
-    <div class="sd-sub">${esc(st.symbol)}${st.sector ? ' · ' + esc(st.sector) : ''}${st.mcap ? ' · ' + cr(st.mcap) : ''}</div>${price}`;
+    <div class="sd-sub">${esc(st.symbol)}${st.sector ? ' · ' + esc(st.sector) : ''}${st.mcap ? ' · <span data-live="mul" data-base="' + st.mcap + '" data-fmt="cr">' + cr(st.mcap) + '</span>' : ''}</div>${price}`;
 }
 
 /* ---------- Stock Data tab (6 buckets) ---------- */
@@ -395,7 +411,10 @@ async function renderStockData() {
   if ($('#nativeChart')) loadNativeChart(p.profile.ticker || sym);
 }
 function bH(n, title, hint) { return `<div class="bucket-h"><span class="bn">${n}</span><h3>${title}</h3>${hint ? `<span class="hint">${hint}</span>` : ''}</div>`; }
-function kpi(k, v, x, cls) { return `<div class="card kpi"><div class="k">${k}</div><div class="v ${cls || ''}">${v}</div>${x ? `<div class="x">${x}</div>` : ''}</div>`; }
+function kpi(k, v, x, cls, attr) { return `<div class="card kpi"><div class="k">${k}</div><div class="v ${cls || ''}" ${attr || ''}>${v}</div>${x ? `<div class="x">${x}</div>` : ''}</div>`; }
+// live-scaling attr: a price-derived number that should track the live price.
+// dir 'mul' scales with price (P/E, mcap…), 'div' inversely (dividend yield).
+function lv(base, fmt, dir) { return (base == null || !isFinite(base)) ? '' : `data-live="${dir || 'mul'}" data-base="${base}" data-fmt="${fmt}"`; }
 
 function bucketProfile(p) {
   const a = p.profile;
@@ -408,7 +427,7 @@ function bucketProfile(p) {
         <dl class="kv">
           <dt>Ticker</dt><dd>${esc(a.symbol)} · ${esc(a.exchange || '—')}</dd>
           <dt>Sector</dt><dd>${esc(a.sector || '—')}</dd>
-          <dt>Market cap</dt><dd>${cr(a.market_cap_cr)}</dd>
+          <dt>Market cap</dt><dd ${lv(a.market_cap_cr, 'cr')}>${cr(a.market_cap_cr)}</dd>
           <dt>Shares out.</dt><dd>${a.shares_outstanding_cr != null ? n2(a.shares_outstanding_cr) + ' cr' : '—'}</dd>
           <dt>Book value</dt><dd>${inr(a.book_value)}</dd>
           <dt>Face value</dt><dd>${inr(a.face_value)}</dd>
@@ -433,8 +452,8 @@ function ownerStack(owners) {
 function bucketFinancials(p) {
   const c = p.financials.charts;
   const charts = [];
-  if (c.revenue?.length) charts.push(chartCard('Revenue (₹ cr)', barsSVG(c.revenue, { color: 'var(--accent)' })));
-  if (c.pat?.length) charts.push(chartCard('Net profit (₹ cr)', barsSVG(c.pat, { color: '#3b82f6', allowNeg: true })));
+  if (c.revenue?.length) charts.push(chartCard('Revenue (₹ cr)', barsSVG(c.revenue, { color: 'var(--accent)', fmt: 'cr' })));
+  if (c.pat?.length) charts.push(chartCard('Net profit (₹ cr)', barsSVG(c.pat, { color: '#3b82f6', allowNeg: true, fmt: 'cr' })));
   const marg = [];
   if (c.opm?.length) marg.push({ name: 'OPM %', color: 'var(--accent)', points: c.opm });
   if (c.net_margin?.length) marg.push({ name: 'Net margin %', color: '#8b5cf6', points: c.net_margin });
@@ -442,11 +461,11 @@ function bucketFinancials(p) {
   const cfs = [];
   if (c.ocf?.length) cfs.push({ name: 'Operating CF', color: 'var(--accent)', points: c.ocf });
   if (c.fcf?.length) cfs.push({ name: 'Free CF', color: '#0aa66e', points: c.fcf });
-  if (cfs.length) charts.push(chartCard('Cash flow (₹ cr)', groupedBarsSVG(alignSeries(cfs), { allowNeg: true }), cfs.map((m) => `<i><span class="sw" style="background:${m.color}"></span>${m.name}</i>`).join('')));
+  if (cfs.length) charts.push(chartCard('Cash flow (₹ cr)', groupedBarsSVG(alignSeries(cfs), { allowNeg: true, fmt: 'cr' }), cfs.map((m) => `<i><span class="sw" style="background:${m.color}"></span>${m.name}</i>`).join('')));
   const dc = [];
   if (c.debt?.length) dc.push({ name: 'Debt', color: 'var(--neg)', points: c.debt });
   if (c.cash?.length) dc.push({ name: 'Cash', color: 'var(--pos)', points: c.cash });
-  if (dc.length) charts.push(chartCard('Debt vs cash (₹ cr)', groupedBarsSVG(alignSeries(dc), {}), dc.map((m) => `<i><span class="sw" style="background:${m.color}"></span>${m.name}</i>`).join('')));
+  if (dc.length) charts.push(chartCard('Debt vs cash (₹ cr)', groupedBarsSVG(alignSeries(dc), { fmt: 'cr' }), dc.map((m) => `<i><span class="sw" style="background:${m.color}"></span>${m.name}</i>`).join('')));
 
   const tables = ['pnl', 'balance_sheet', 'cash_flow'].map((k) => finTable(k === 'pnl' ? 'Profit & Loss' : k === 'balance_sheet' ? 'Balance Sheet' : 'Cash Flow', p.financials.annual[k]))
     .concat([finTable('Quarterly Results', p.financials.quarterly)]).filter(Boolean).join('');
@@ -486,14 +505,14 @@ function bucketQuality(p) {
 function bucketValuation(p, sym) {
   const v = p.valuation;
   const cards = [
-    kpi('P/E', num(v.pe), 'price / earnings'),
-    kpi('P/B', num(v.pb), 'price / book'),
-    kpi('EV/EBITDA', num(v.ev_ebitda, '×'), ''),
-    kpi('EV/Sales', num(v.ev_sales, '×'), ''),
-    kpi('P/FCF', num(v.p_fcf, '×'), ''),
-    kpi('Div yield', num(v.dividend_yield_pct, '%'), 'trailing'),
-    kpi('52w high', inr(v.high_52w), ''),
-    kpi('52w low', inr(v.low_52w), ''),
+    kpi('P/E', num(v.pe), 'price / earnings', '', lv(v.pe, 'num')),
+    kpi('P/B', num(v.pb), 'price / book', '', lv(v.pb, 'num')),
+    kpi('EV/EBITDA', num(v.ev_ebitda, '×'), '', '', lv(v.ev_ebitda, 'x')),
+    kpi('EV/Sales', num(v.ev_sales, '×'), '', '', lv(v.ev_sales, 'x')),
+    kpi('P/FCF', num(v.p_fcf, '×'), '', '', lv(v.p_fcf, 'x')),
+    kpi('Div yield', num(v.dividend_yield_pct, '%'), 'trailing', '', lv(v.dividend_yield_pct, 'pct', 'div')),
+    kpi('52w high', inr(v.high_52w), '', '', 'data-live="q_high" data-fmt="inr"'),
+    kpi('52w low', inr(v.low_52w), '', '', 'data-live="q_low" data-fmt="inr"'),
   ].join('');
   const ret = v.returns || {};
   const order = [['1m', '1m'], ['3m', '3m'], ['6m', '6m'], ['1y', '1y'], ['3y', '3y'], ['5y', '5y']];
@@ -547,12 +566,14 @@ function finTableOpen(title, t) {
 // the older {href,text} shape, and flattens to one openable card per document.
 function normalizeDocs(docs) {
   if (!docs) return [];
-  const out = [];
+  const out = [], seen = new Set();
   const isPdf = (h) => /\.pdf(\?|#|$)/i.test(h);
+  const ok = (h) => /^https?:\/\//i.test(h);          // only links that actually open
   const add = (arr, kind) => (arr || []).forEach((d) => {
     if (!d) return;
-    if (typeof d === 'string') { out.push({ kind, type: 'Document', title: d, href: d, date: '', source: '', blurb: blurbFor(kind, ''), isPdf: isPdf(d) }); return; }
-    const href = d.href || d.url || ''; if (!href) return;
+    if (typeof d === 'string') { if (ok(d) && !seen.has(d)) { seen.add(d); out.push({ kind, type: 'Document', title: d, href: d, date: '', source: '', blurb: blurbFor(kind, ''), isPdf: isPdf(d) }); } return; }
+    const href = d.href || d.url || ''; if (!ok(href) || seen.has(href)) return;
+    seen.add(href);
     const type = d.type || d.label || d.text || 'Document';
     out.push({
       kind: d.kind || kind, type,
@@ -579,25 +600,23 @@ function blurbFor(kind, type) {
 }
 function docThumb(d) {
   const t = (d.type + ' ' + d.kind).toLowerCase();
-  if (/annual/.test(t)) return ['t-annual', 'ANNUAL<br>REPORT'];
-  if (/rating/.test(t)) return ['t-rating', 'CREDIT<br>RATING'];
-  if (/note/.test(t)) return ['t-notes', 'CONCALL<br>NOTES'];
-  if (/ppt|present|deck/.test(t)) return ['t-ppt', 'INVESTOR<br>DECK'];
-  if (/rec|audio/.test(t)) return ['t-transcript', 'CALL<br>AUDIO'];
-  if (/transcript|concall|earnings/.test(t)) return ['t-transcript', 'CALL<br>TRANSCRIPT'];
-  return ['t-transcript', 'FILING'];
+  if (/annual/.test(t)) return 't-annual';
+  if (/rating/.test(t)) return 't-rating';
+  if (/note/.test(t)) return 't-notes';
+  if (/ppt|present|deck/.test(t)) return 't-ppt';
+  return 't-transcript';
 }
 function docCard(d, idx) {
-  const [cls, label] = docThumb(d);
+  const cls = docThumb(d);
   const fmt = d.isPdf ? 'PDF' : 'WEB';
   const src = d.source ? `<span class="doc-src">${esc(String(d.source).toUpperCase())}</span>` : '';
   const date = d.date ? `<span class="doc-date">${esc(d.date)}</span>` : '';
-  return `<button class="doccard" onclick="openDoc(${idx})" title="${esc(d.title)}">
-    <div class="doc-thumb ${cls}"><div class="doc-kind">${label}</div><span class="doc-fmt">${fmt}</span></div>
+  return `<button class="doccard" onclick="openDoc(${idx})" title="${esc(d.title)} — opens in a new tab">
+    <div class="doc-thumb ${cls}">${I.doc}<span class="doc-fmt">${fmt}</span></div>
     <div class="doc-meta">
       <div class="doc-title">${esc(d.title)}</div>
       <div class="doc-blurb">${esc(d.blurb)}</div>
-      <div class="doc-foot">${date}<span class="doc-open">${d.isPdf ? 'Preview' : 'Open'} &rarr;</span>${src}</div>
+      <div class="doc-foot">${date}<span class="doc-open">Open &rarr;</span>${src}</div>
     </div>
   </button>`;
 }
@@ -608,27 +627,53 @@ function renderDocsSection(docs) {
   return `<div class="panel" style="margin-top:14px"><h4>Filings &amp; concalls <span style="font-weight:500;color:var(--dim);font-size:12px">· ${list.length} document${list.length > 1 ? 's' : ''}</span></h4>
     <div class="docgrid">${list.map((d, i) => docCard(d, i)).join('')}</div></div>`;
 }
-// Open a document: PDFs render inline in a modal (first page+) via Google's viewer
-// with an "open original" escape hatch; non-PDF links (e.g. exchange pages) open
-// directly in a new tab.
+// Open a document straight at the source (PDF or exchange page) in a new tab.
 function openDoc(idx) {
   const d = (state.activeDocs || [])[idx];
   if (!d || !d.href) return;
-  const url = d.href;
-  if (!d.isPdf) { window.open(url, '_blank', 'noopener'); return; }
-  const gv = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(url)}`;
-  const m = $('#modal');
-  m.className = 'modal viewer';
-  m.innerHTML = `<button class="close-x" onclick="closeOverlay()">✕</button>
-    <div class="dv-head"><div><div class="dv-title">${esc(d.title)}</div><div class="dv-sub">${esc(d.blurb || '')}${d.date ? ' · ' + esc(d.date) : ''}</div></div>
-      <a class="btn btn-ghost btn-sm" href="${esc(url)}" target="_blank" rel="noopener">${I.ext} Open original</a></div>
-    <div class="dv-body"><iframe class="dv-frame" src="${esc(gv)}" referrerpolicy="no-referrer" loading="lazy"></iframe>
-      <div class="dv-fallback">First-page preview via Google Docs Viewer. If it doesn't load, <a href="${esc(url)}" target="_blank" rel="noopener">open the original &#8599;</a>.</div></div>`;
-  showOverlay();
+  window.open(d.href, '_blank', 'noopener');
 }
 
 /* ---------- charts (SVG, themeable via currentColor / CSS vars) ---------- */
 function chartCard(title, svg, legend) { return `<div class="chartcard"><h4>${esc(title)}${legend ? `<span class="leg">${legend}</span>` : ''}</h4>${svg}</div>`; }
+
+/* Groww-style hover: wrap an SVG with a crosshair + dot(s) + tooltip overlay, and
+   carry the per-column data as JSON. preserveAspectRatio="none" makes the viewBox
+   map linearly to the box, so we position overlays with simple percentages. */
+function iWrap(svg, w, h, cols, fmt) {
+  let data = ''; try { data = encodeURIComponent(JSON.stringify({ w, h, fmt: fmt || 'num', cols })); } catch {}
+  return `<div class="chartwrap" data-chart="${data}">${svg}<div class="cx"></div><div class="cdots"></div><div class="ctip"></div></div>`;
+}
+function fmtVal(v, fmt) {
+  if (v == null || !isFinite(v)) return '—';
+  if (fmt === 'inr') return inr(v);
+  if (fmt === 'cr') return '₹' + n2(v) + ' cr';
+  if (fmt === 'pct') return n2(v) + '%';
+  if (fmt === 'x') return n2(v) + '×';
+  return n2(v);
+}
+let _lastWrap = null;
+function hideCross(w) { if (!w) return; const cx = w.querySelector('.cx'), tip = w.querySelector('.ctip'), dots = w.querySelector('.cdots'); if (cx) cx.style.display = 'none'; if (tip) tip.style.display = 'none'; if (dots) dots.innerHTML = ''; }
+function chartHover(e) {
+  const wrap = e.target && e.target.closest ? e.target.closest('.chartwrap') : null;
+  if (wrap !== _lastWrap) { hideCross(_lastWrap); _lastWrap = wrap; }
+  if (!wrap) return;
+  let d = wrap._cd; if (!d) { try { d = JSON.parse(decodeURIComponent(wrap.dataset.chart)); } catch { return; } wrap._cd = d; }
+  if (!d.cols || !d.cols.length) return;
+  const rect = wrap.getBoundingClientRect(); if (!rect.width) return;
+  const vbx = (e.clientX - rect.left) / rect.width * d.w;
+  let best = null, bd = 1e9; for (const c of d.cols) { const dd = Math.abs(c.x - vbx); if (dd < bd) { bd = dd; best = c; } }
+  if (!best) return;
+  const cx = wrap.querySelector('.cx'), tip = wrap.querySelector('.ctip'), dots = wrap.querySelector('.cdots');
+  const lx = best.x / d.w * 100;
+  cx.style.left = lx + '%'; cx.style.display = 'block';
+  dots.innerHTML = best.ys.map((s) => `<span class="cdot" style="display:block;left:${lx}%;top:${(s.y / d.h * 100)}%;background:${s.c || 'var(--accent)'}"></span>`).join('');
+  tip.innerHTML = `<div class="tl">${esc(best.l || '')}</div>` + best.ys.map((s) => `<div class="ts">${s.n ? `<span class="sw" style="background:${s.c}"></span>${esc(s.n)}` : ''}<b>${fmtVal(s.v, d.fmt)}</b></div>`).join('');
+  tip.style.display = 'block';
+  tip.style.left = Math.max(14, Math.min(86, lx)) + '%';
+}
+document.addEventListener('pointermove', chartHover, { passive: true });
+document.addEventListener('pointerdown', chartHover, { passive: true });
 function alignSeries(list) {
   const labels = [];
   for (const s of list) for (const pt of s.points) if (!labels.includes(pt.p)) labels.push(pt.p);
@@ -645,15 +690,18 @@ function barsSVG(series, opts = {}) {
   const y = (v) => base - (v - min) / range * (base - 16);
   const zeroY = y(0);
   const bw = (W - pad - 8) / series.length * 0.62;
+  const cols = [];
   const bars = series.map((s, i) => {
     const cx = pad + (i + 0.5) * (W - pad - 8) / series.length;
     const yy = y(s.v), top = Math.min(yy, zeroY), h = Math.abs(yy - zeroY);
     const col = (opts.allowNeg && s.v < 0) ? 'var(--neg)' : (opts.color || 'var(--accent)');
+    cols.push({ x: +cx.toFixed(1), l: String(s.p), ys: [{ y: +yy.toFixed(1), c: col, v: s.v }] });
     const lbl = opts.labelEach ? `<text class="val" x="${cx}" y="${top - 4}" text-anchor="middle">${abbr(s.v)}</text>` : (i === series.length - 1 ? `<text class="val" x="${cx}" y="${top - 4}" text-anchor="middle">${abbr(s.v)}</text>` : '');
     return `<rect class="bar" x="${(cx - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" rx="2" fill="${col}"/>${lbl}`;
   }).join('');
   const xl = xLabels(series.map((s) => s.p), W, pad, 6).map((t) => t.replace('y="0"', `y="${H - 6}"`)).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none"><line class="grid" x1="${pad}" y1="${zeroY}" x2="${W - 8}" y2="${zeroY}"/>${bars}${xl}</svg>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none"><line class="grid" x1="${pad}" y1="${zeroY}" x2="${W - 8}" y2="${zeroY}"/>${bars}${xl}</svg>`;
+  return iWrap(svg, W, H, cols, opts.fmt || 'num');
 }
 function groupedBarsSVG(aligned, opts = {}) {
   const { labels, rows } = aligned;
@@ -664,23 +712,28 @@ function groupedBarsSVG(aligned, opts = {}) {
   const zeroY = y(0);
   const groupW = (W - pad - 8) / labels.length, bw = groupW * 0.36 / Math.max(1, rows.length / 2);
   let bars = '';
+  const cols = [];
   labels.forEach((lab, i) => {
     const gx = pad + i * groupW + groupW * 0.18;
+    const ys = [];
     rows.forEach((r, j) => {
       const v = r.vals[i]; if (v == null) return;
       const x = gx + j * (bw + 2), yy = y(v), top = Math.min(yy, zeroY), h = Math.abs(yy - zeroY);
       const col = (opts.allowNeg && v < 0) ? 'var(--neg)' : r.color;
       bars += `<rect class="bar" x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" rx="2" fill="${col}"/>`;
+      ys.push({ y: +yy.toFixed(1), c: r.color, v, n: r.name });
     });
+    if (ys.length) cols.push({ x: +(pad + i * groupW + groupW / 2).toFixed(1), l: String(lab), ys });
   });
   const xl = xLabels(labels, W, pad, 6).map((t) => t.replace('y="0"', `y="${H - 6}"`)).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none"><line class="grid" x1="${pad}" y1="${zeroY}" x2="${W - 8}" y2="${zeroY}"/>${bars}${xl}</svg>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none"><line class="grid" x1="${pad}" y1="${zeroY}" x2="${W - 8}" y2="${zeroY}"/>${bars}${xl}</svg>`;
+  return iWrap(svg, W, H, cols, opts.fmt || 'num');
 }
 function linesSVG(aligned, opts = {}) {
   const { labels, rows } = aligned;
   const W = 360, H = 170, pad = 30, base = H - 24, top = 14;
   const all = rows.flatMap((r) => r.vals).filter((v) => v != null);
-  if (!all.length) return '<svg viewBox="0 0 360 170" class="chart"></svg>';
+  if (!all.length) return '<div class="chartwrap"><svg viewBox="0 0 360 170" class="chart"></svg></div>';
   let max = Math.max(...all), min = Math.min(...all); if (opts.pct) { max = Math.max(max, 0); min = Math.min(min, 0); }
   const range = (max - min) || 1;
   const X = (i) => pad + (labels.length === 1 ? 0 : i / (labels.length - 1) * (W - pad * 1.4));
@@ -693,8 +746,11 @@ function linesSVG(aligned, opts = {}) {
     const dot = last ? `<circle cx="${X(last[1]).toFixed(1)}" cy="${Y(last[0]).toFixed(1)}" r="3" fill="${r.color}"/>` : '';
     return `<path d="${d}" fill="none" stroke="${r.color}" stroke-width="2" stroke-linejoin="round"/>${dot}`;
   }).join('');
+  const cols = [];
+  labels.forEach((lab, i) => { const ys = rows.map((r) => (r.vals[i] != null ? { y: +Y(r.vals[i]).toFixed(1), c: r.color, v: r.vals[i], n: r.name } : null)).filter(Boolean); if (ys.length) cols.push({ x: +X(i).toFixed(1), l: String(lab), ys }); });
   const xl = xLabels(labels, W, pad, 6).map((t) => t.replace('y="0"', `y="${H - 6}"`)).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none">${grid}${paths}${xl}</svg>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none">${grid}${paths}${xl}</svg>`;
+  return iWrap(svg, W, H, cols, opts.pct ? 'pct' : (opts.fmt || 'num'));
 }
 
 /* ---------- price chart (Yahoo via /api/chart) ---------- */
@@ -720,11 +776,14 @@ function priceChart(points) {
   const last = ys[ys.length - 1], firstV = ys[0], up = last >= firstV, col = up ? 'var(--pos)' : 'var(--neg)';
   const fmtD = (t) => { const d = new Date(t); return d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }); };
   const gl = []; for (let i = 0; i <= 4; i++) { const v = minY + (maxY - minY) * i / 4, yv = Y(v); gl.push(`<line x1="${pad}" y1="${yv.toFixed(1)}" x2="${W - pad * 0.4}" y2="${yv.toFixed(1)}" class="grid"/><text x="6" y="${(yv + 3).toFixed(1)}" class="axl">${Math.round(v)}</text>`); }
-  return `<svg viewBox="0 0 ${W} ${H}" class="lchart" preserveAspectRatio="none">
+  const fmtFull = (t) => new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+  const cols = points.map((p) => ({ x: +X(p.t).toFixed(1), l: fmtFull(p.t), ys: [{ y: +Y(p.c).toFixed(1), c: col, v: p.c }] }));
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart" preserveAspectRatio="none">
     <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".18"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
     ${gl.join('')}<path d="${area}" fill="url(#cg)"/><path d="${path}" fill="none" stroke="${col}" stroke-width="2"/>
-    <text x="${pad}" y="${H - 8}" class="axl">${fmtD(minX)}</text><text x="${W - pad}" y="${H - 8}" class="axl" text-anchor="end">${fmtD(maxX)}</text></svg>
-    <div class="chstat"><span>Low ₹${Math.round(minY)}</span><span>High ₹${Math.round(maxY)}</span><span class="${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${((last / firstV - 1) * 100).toFixed(1)}% over range</span></div>`;
+    <text x="${pad}" y="${H - 8}" class="axl">${fmtD(minX)}</text><text x="${W - pad}" y="${H - 8}" class="axl" text-anchor="end">${fmtD(maxX)}</text></svg>`;
+  return iWrap(svg, W, H, cols, 'inr') +
+    `<div class="chstat"><span>Low ₹${Math.round(minY)}</span><span>High ₹${Math.round(maxY)}</span><span class="${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${((last / firstV - 1) * 100).toFixed(1)}% over range</span></div>`;
 }
 
 /* ---------- Agent Thesis tab ---------- */
@@ -822,13 +881,63 @@ function renderAllocation() {
       </div>
       <span class="rm" onclick="toggleAlloc('${esc(sym)}')">remove</span>
     </div>`;
-  }).join('')}</div>
-  <div class="gapnote" style="margin-top:16px">Position sizing, a monthly buy plan and conviction-weighting live here next — <b>out of scope for this build</b>.</div>`;
+  }).join('')}</div>`;
 }
 
 /* ============================ CHROME ============================ */
-function applyTheme() { document.documentElement.setAttribute('data-theme', state.theme === 'dark' ? 'dark' : ''); $('#themeBtn').innerHTML = state.theme === 'dark' ? I.moon : I.sun; const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', state.theme === 'dark' ? '#0f1216' : '#ffffff'); }
+function applyTheme() { document.documentElement.setAttribute('data-theme', state.theme === 'dark' ? 'dark' : ''); $('#themeBtn').innerHTML = state.theme === 'dark' ? I.moon : I.sun; const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', state.theme === 'dark' ? '#23272E' : '#E0E5EC'); }
 function toggleTheme() { state.theme = state.theme === 'dark' ? 'light' : 'dark'; persist(); applyTheme(); if (state.step === 2 && state.activeTab === 'data') renderStockData(); }
+
+/* ============================ LIVE QUOTE POLLING ============================ */
+// Screener lists stay cached (they barely move); once you're researching a single
+// name we poll its live quote every 5s and update the price + every price-derived
+// number in place — without re-rendering the view.
+function startLive(sym) {
+  stopLive();
+  if (!sym) return;
+  pollQuote(sym);                                   // fire immediately, then every 5s
+  state.liveTimer = setInterval(() => pollQuote(sym), 5000);
+}
+function stopLive() { if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; } }
+async function pollQuote(sym) {
+  if (state.step !== 2 || state.activeSymbol !== sym) { stopLive(); return; }
+  if (document.hidden) return;                       // don't poll a backgrounded tab
+  try {
+    const r = await fetch(`${API}/api/quote/${encodeURIComponent(sym)}`);
+    if (!r.ok) return;
+    const q = await r.json();
+    if (state.activeSymbol === sym && !q.error) updateLive(q);
+  } catch {}
+}
+function updateLive(q) {
+  if (!q || q.price == null) return;
+  const sym = state.activeSymbol;
+  let base = state.basePrice[sym];
+  if (base == null || !isFinite(base)) { base = q.price; state.basePrice[sym] = base; }
+  const ratio = base ? q.price / base : 1;
+  const pe = $('#livePrice'); if (pe) pe.textContent = inr(q.price);
+  const ce = $('#liveChg');
+  if (ce) {
+    const chg = q.changePct != null ? q.changePct : (q.prevClose ? (q.price / q.prevClose - 1) * 100 : null);
+    ce.textContent = chg == null ? '—' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%');
+    ce.className = 'sd-chg ' + (chg == null ? '' : (chg >= 0 ? 'up' : 'down'));
+  }
+  const ago = $('#liveAgo'); if (ago) ago.textContent = 'live';
+  document.querySelectorAll('[data-live]').forEach((el) => {
+    const key = el.getAttribute('data-live'), fmt = el.getAttribute('data-fmt') || 'num';
+    let val = null;
+    if (key === 'mul') { const b = +el.getAttribute('data-base'); if (isFinite(b)) val = b * ratio; }
+    else if (key === 'div') { const b = +el.getAttribute('data-base'); if (isFinite(b) && ratio) val = b / ratio; }
+    else if (key === 'q_high') val = q.high_52w;
+    else if (key === 'q_low') val = q.low_52w;
+    else if (key === 'q_vol') val = q.volume;
+    if (val == null || !isFinite(val)) return;
+    const next = fmtVal(val, fmt);
+    if (el.textContent !== next) { el.textContent = next; el.classList.add('liveflash'); setTimeout(() => el.classList.remove('liveflash'), 400); }
+  });
+  state.liveAt = Date.now();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.step === 2 && state.activeSymbol) pollQuote(state.activeSymbol); });
 function showOverlay() { $('#overlay').classList.add('show'); }
 function closeOverlay() { $('#overlay').classList.remove('show'); }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(); });
@@ -845,14 +954,33 @@ function toast(msg) {
 
 const INFO = {
   about: { title: 'About Meridian', body: `
-    <p><b>A fixed direction in a noisy market.</b> Meridian runs my monthly routine in one place: screen, intersect, research, decide. Built by Ansh Dwivedi — personal and non-commercial.</p>
-    <p>Quantitative data is read from Screener.in; price &amp; returns from Yahoo Finance; the long-term thesis is written by an AI agent (Google Gemini) that uses that data as ground truth and researches the gaps from the live web.</p>
-    <p class="muted">Nothing is fabricated — anything unreachable is shown as “—” or flagged by the agent.</p>` },
+    <p><b>My monthly investing process — automated.</b> Meridian is the offline routine I used to run by hand, turned into one quiet tool: screen the market, research the survivors, decide. Built by Ansh Dwivedi; personal and non-commercial.</p>
+    <p>It's built for one kind of investing — buy quality businesses and hold them for years, without checking in unless something material changes. Done with discipline, that compounds in a way an index fund, a mutual fund, or any generic basket can't.</p>
+    <h4>The proof — my Groww portfolio</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 10px">
+      <div style="background:var(--surface);box-shadow:var(--nm-out-sm);border-radius:var(--r);padding:15px">
+        <div style="font-size:12px;color:var(--muted)">My portfolio · XIRR</div>
+        <div style="font-size:27px;font-weight:800;color:var(--pos);font-family:var(--font-display)">+19.32%</div>
+      </div>
+      <div style="background:var(--surface);box-shadow:var(--nm-out-sm);border-radius:var(--r);padding:15px">
+        <div style="font-size:12px;color:var(--muted)">NIFTY 50 · XIRR</div>
+        <div style="font-size:27px;font-weight:800;color:var(--neg);font-family:var(--font-display)">−0.95%</div>
+      </div>
+    </div>
+    <div style="text-align:center;margin:2px 0 12px;padding:12px;border-radius:var(--r);box-shadow:var(--nm-in-sm);font-size:13.5px">Outperformed NIFTY 50 by <b style="color:var(--accent-deep)">+20.27%</b></div>
+    <h4>How it works</h4>
+    <p>Quantitative data from Screener.in; live price &amp; returns from Yahoo Finance; the long-term thesis is written by an AI agent (Google Gemini) that treats the fetched data as ground truth and researches the gaps from the live web. Nothing is fabricated — anything unreachable is shown as “—”.</p>
+    <p class="muted">Past performance is historical and specific to one portfolio — not a promise of future returns. See Terms &amp; Disclaimer.</p>` },
   howto: { title: 'How to use Meridian', body: `
     <h4>1 · Shortlist</h4><p>Pick screens, set a depth, take the intersection. Hit <b>Research</b> on the survivors you want to study.</p>
-    <h4>2 · Research</h4><p>Pick a stock on the left. <b>Stock Data</b> shows six buckets of fetched fundamentals; <b>Agent Thesis</b> generates a structured 10–15-year verdict on demand. Tap the ☆ to flag a name for allocation.</p>
+    <h4>2 · Research</h4><p>Pick a stock on the left. <b>Stock Data</b> shows six buckets of fundamentals with live prices; <b>Agent Thesis</b> generates a structured 10–15-year verdict on demand. Tap the ☆ to flag a name for allocation.</p>
     <h4>3 · Allocation</h4><p>Your flagged names gather here. Sizing &amp; the monthly buy plan come later.</p>
     <p class="muted">Everything resets when you close the tab — Meridian is a once-a-month, use-and-close tool.</p>` },
+  terms: { title: 'Terms & Disclaimer', body: `
+    <p><b>Meridian is a personal research tool, not financial advice.</b> It is built by Ansh Dwivedi for his own use and shared with friends &amp; family. Nothing here is a recommendation to buy, sell, or hold any security.</p>
+    <p>Ansh is not a SEBI-registered investment adviser or research analyst. Data is fetched from third parties (Screener.in, Yahoo Finance) and may be delayed, incomplete, or incorrect. The AI thesis is machine-generated decision support and can be wrong.</p>
+    <p>Investing in equities carries risk, including loss of capital. Any performance figures shown (including past XIRR) are historical, specific to one portfolio, and not a promise of future returns. Do your own research and consult a registered adviser before investing.</p>
+    <p class="muted">By using Meridian you accept that you are solely responsible for your own investment decisions.</p>` },
 };
 function openInfo(k) {
   const o = INFO[k];
@@ -868,8 +996,10 @@ function openInfo(k) {
 function init() {
   restore();
   applyTheme();
-  $('#footnote').textContent = 'Meridian · personal stock picker · data from Screener.in & Yahoo Finance · thesis by Gemini';
+  $('#footnote').innerHTML = 'Meridian · invest beyond the index · data from Screener.in &amp; Yahoo Finance · thesis by Gemini'
+    + '<br><span style="display:inline-flex;gap:6px;align-items:center;margin-top:6px">Not investment advice — a personal research tool.'
+    + ' <button class="footlink" onclick="openInfo(\'terms\')">Terms &amp; Disclaimer</button></span>';
   renderBadges();
-  goStep(state.step || 1);
+  goStep(state.step == null ? 0 : state.step);
 }
 init();
