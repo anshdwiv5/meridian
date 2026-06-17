@@ -32,12 +32,10 @@
       <span class="name">Meridian</span>
     </button>
 
-    <nav class="stepper" id="stepper" aria-label="Steps">
-      <button class="step" data-step="1" onclick="goStep(1)"><span class="sn">1</span> Shortlist <span class="badge" id="badge1">0</span></button>
-      <span class="steptick"></span>
-      <button class="step" data-step="2" onclick="goStep(2)"><span class="sn">2</span> Research <span class="badge" id="badge2">0</span></button>
-      <span class="steptick"></span>
-      <button class="step" data-step="3" onclick="goStep(3)"><span class="sn">3</span> Allocation <span class="badge" id="badge3">0</span></button>
+    <nav class="stepper" id="stepper" role="tablist" aria-label="Sections">
+      <button class="step" data-step="1" role="tab" onclick="goStep(1)">Shortlist <span class="badge" id="badge1">0</span></button>
+      <button class="step" data-step="2" role="tab" onclick="goStep(2)">Research <span class="badge" id="badge2">0</span></button>
+      <button class="step" data-step="3" role="tab" onclick="goStep(3)">Allocation <span class="badge" id="badge3">0</span></button>
     </nav>
 
     <div class="topright">
@@ -75,6 +73,11 @@
 
         <div id="screenListMount"></div>
         <div id="interMount"></div>
+
+        <div class="nextcta">
+          <div class="nextcta-note" id="nextNote1">Add survivors to research, then continue.</div>
+          <button class="btn btn-primary" onclick="goStep(2)">Next: Research <span class="arw">&rarr;</span></button>
+        </div>
       </div>
     </section>
 
@@ -89,6 +92,10 @@
             <button class="rs-tab" data-tab="thesis" onclick="setTab('thesis')">Agent Thesis</button>
           </div>
           <div class="rs-body" id="rsBody"></div>
+          <div class="nextcta" id="rsNext">
+            <div class="nextcta-note">Star the names you want to size next.</div>
+            <button class="btn btn-primary" onclick="goStep(3)">Next: Allocation <span class="arw">&rarr;</span></button>
+          </div>
         </div>
       </div>
     </section>

@@ -48,18 +48,23 @@ a{color:var(--accent); text-decoration:none}
 .brandlogo{width:26px; height:26px; display:block}
 .brand .name{font-weight:800; font-size:18px; letter-spacing:-.03em; color:var(--text)}
 
-.stepper{display:flex; align-items:center; gap:4px; margin:0 auto; flex-wrap:nowrap}
-.step{display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px;
-  font-size:13.5px; font-weight:600; color:var(--muted); transition:var(--t); white-space:nowrap}
-.step .sn{display:grid; place-items:center; width:20px; height:20px; border-radius:50%;
-  background:var(--surface-2); color:var(--dim); font-size:12px; font-weight:700}
-.step:hover{color:var(--text); background:var(--surface-2)}
-.step.on{color:var(--accent); background:var(--accent-soft)}
-.step.on .sn{background:var(--accent); color:#fff}
+/* full-width segmented tab control — three equal tabs spanning the bar, no numbers */
+.stepper{display:flex; align-items:stretch; flex:1 1 auto; min-width:0; gap:5px;
+  margin:0 clamp(10px,2.4vw,28px); padding:5px; border-radius:12px; background:var(--surface-2)}
+.step{flex:1 1 0; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:9px 10px; border-radius:9px; font-size:14px; font-weight:600; color:var(--muted);
+  transition:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.step:hover{color:var(--text)}
+.step.on{color:var(--accent); background:var(--surface); box-shadow:var(--shadow)}
 .step .badge{display:none; min-width:18px; height:18px; padding:0 5px; border-radius:9px;
-  background:var(--surface-2); color:var(--muted); font-size:11px; font-weight:700; place-items:center}
+  background:var(--accent-soft); color:var(--accent-deep); font-size:11px; font-weight:700; place-items:center}
 .step .badge.show{display:grid}
-.steptick{width:18px; height:1px; background:var(--line-2); flex:none}
+@media(max-width:600px){
+  .topbar{gap:10px; padding:0 12px}
+  .brand .name{display:none}
+  .stepper{margin:0 8px; gap:3px; padding:4px}
+  .step{font-size:12.5px; padding:8px 6px; gap:6px}
+}
 
 .topright{display:flex; align-items:center; gap:4px}
 .tlink{padding:7px 11px; border-radius:8px; font-size:13.5px; font-weight:500; color:var(--muted); transition:var(--t)}
@@ -117,6 +122,19 @@ a{color:var(--accent); text-decoration:none}
 .btn-primary:disabled{opacity:.45; cursor:not-allowed}
 .btn-ghost{color:var(--muted); border:1px solid var(--line-2)} .btn-ghost:hover{color:var(--text); border-color:var(--text)}
 .btn-sm{padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600}
+.btn svg{width:16px; height:16px; flex:none}
+.arw{font-weight:700; transition:transform var(--t)}
+.btn:hover .arw{transform:translateX(2px)}
+
+/* inline icons that ship without width/height attrs must be constrained, else an
+   SVG with only a viewBox expands to 100% of its (block) container. */
+.bbcard h4 svg, .sources h4 svg, .thintro svg, .doc-blurb svg{width:1em; height:1em; flex:none; vertical-align:-.12em}
+.keynote>svg{width:34px; height:34px; color:var(--accent); margin-bottom:6px}
+
+/* next-section CTA at the end of each step */
+.nextcta{display:flex; align-items:center; justify-content:flex-end; gap:16px; flex-wrap:wrap;
+  margin-top:30px; padding-top:22px; border-top:1px solid var(--line)}
+.nextcta-note{font-size:13px; color:var(--dim); margin-right:auto}
 
 /* ============================ LISTS (screen list + intersection) ============================ */
 .listwrap{margin-top:18px; border:1px solid var(--line); border-radius:var(--r); overflow:hidden; background:var(--surface)}
@@ -247,9 +265,41 @@ details.fin>summary::after{content:"+"; color:var(--dim); font-size:16px} detail
 .flag{display:flex; gap:11px; align-items:flex-start; padding:11px 13px; border-radius:9px; border:1px solid var(--line); background:var(--surface); font-size:13px; line-height:1.5}
 .flag .ic{width:22px; height:22px; border-radius:6px; flex:none; display:grid; place-items:center; font-size:13px; font-weight:700}
 .flag.ok .ic{background:var(--pos-soft); color:var(--pos)} .flag.watch .ic{background:var(--warn-soft); color:var(--warn)}
-.docs{display:flex; flex-direction:column; gap:8px}
-.doclink{display:flex; align-items:center; gap:9px; padding:9px 12px; border:1px solid var(--line); border-radius:9px; font-size:13px; color:var(--text); transition:var(--t)}
-.doclink:hover{border-color:var(--accent); color:var(--accent)}
+/* document cards (filings & concalls) */
+.docgrid{display:grid; gap:12px; grid-template-columns:1fr}
+@media(min-width:560px){.docgrid{grid-template-columns:1fr 1fr}}
+@media(min-width:920px){.docgrid{grid-template-columns:1fr 1fr 1fr}}
+.doccard{display:flex; gap:12px; text-align:left; align-items:stretch; padding:12px; border:1px solid var(--line);
+  border-radius:var(--r); background:var(--surface); transition:var(--t); width:100%}
+.doccard:hover{border-color:var(--accent); box-shadow:var(--shadow); transform:translateY(-1px)}
+.doc-thumb{position:relative; flex:none; width:62px; border-radius:8px; overflow:hidden;
+  display:flex; flex-direction:column; justify-content:space-between; padding:8px 7px;
+  background:var(--surface-2); border:1px solid var(--line)}
+.doc-thumb::before{content:""; position:absolute; top:9px; left:7px; right:7px; height:0;
+  box-shadow:0 6px 0 -5px var(--line-2),0 11px 0 -5px var(--line-2),0 16px 0 -5px var(--line-2),0 21px 0 -5px var(--line-2)}
+.doc-kind{font-size:9.5px; font-weight:800; letter-spacing:.04em; line-height:1.15; color:var(--text); z-index:1}
+.doc-fmt{align-self:flex-start; font-size:8.5px; font-weight:800; letter-spacing:.05em; padding:2px 5px; border-radius:5px;
+  background:var(--surface); color:var(--muted); border:1px solid var(--line-2); z-index:1}
+.doc-thumb.t-transcript{background:var(--accent-soft)}
+.doc-thumb.t-notes{background:rgba(59,130,246,.14)}
+.doc-thumb.t-ppt{background:var(--warn-soft)}
+.doc-thumb.t-annual{background:rgba(139,92,246,.16)}
+.doc-thumb.t-rating{background:var(--pos-soft)}
+.doc-meta{min-width:0; flex:1; display:flex; flex-direction:column; gap:3px}
+.doc-title{font-size:13.5px; font-weight:700; color:var(--text); line-height:1.35}
+.doc-blurb{font-size:12px; color:var(--muted); line-height:1.45}
+.doc-foot{margin-top:auto; padding-top:6px; display:flex; align-items:center; gap:8px; font-size:11px; color:var(--dim)}
+.doc-foot .doc-src{margin-left:auto; text-transform:uppercase; letter-spacing:.04em; font-weight:600}
+.doc-open{font-size:11px; font-weight:700; color:var(--accent)}
+
+/* in-app document viewer modal */
+.modal.viewer{width:min(860px,100%)}
+.dv-head{display:flex; align-items:center; gap:14px; padding:16px 20px; border-bottom:1px solid var(--line)}
+.dv-head .dv-title{font-size:15px; font-weight:800} .dv-head .dv-sub{font-size:12px; color:var(--muted); margin-top:2px}
+.dv-head .btn{margin-left:auto; flex:none}
+.dv-body{display:flex; flex-direction:column}
+.dv-frame{width:100%; height:72vh; border:none; background:var(--surface-2)}
+.dv-fallback{padding:10px 20px; font-size:12px; color:var(--muted); border-top:1px solid var(--line)}
 .gapnote{margin-top:12px; padding:10px 13px; border-radius:9px; background:var(--surface-2); font-size:12.5px; color:var(--muted); line-height:1.55}
 .gapnote b{color:var(--text)}
 

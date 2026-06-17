@@ -85,7 +85,7 @@ function goStep(n) {
   document.querySelectorAll('.step').forEach((b) => b.classList.toggle('on', +b.dataset.step === n));
   window.scrollTo({ top: 0, behavior: 'auto' });
   if (n === 1) ensureScreens();
-  if (n === 2) enterResearch();
+  if (n === 2) { enterResearch(); const rn = $('#rsNext'); if (rn) rn.style.display = state.researchList.length ? 'flex' : 'none'; }
   if (n === 3) renderAllocation();
 }
 function renderBadges() {
@@ -529,9 +529,7 @@ function bucketGovernance(p) {
       <div class="panel"><h4>What’s working (Screener)</h4><div class="flags">${(g.pros || []).map((x) => `<div class="flag ok"><div class="ic">✓</div><div>${esc(x)}</div></div>`).join('') || '<p class="about">—</p>'}</div></div>
       <div class="panel"><h4>Watch-outs (Screener)</h4><div class="flags">${(g.cons || []).map((x) => `<div class="flag watch"><div class="ic">!</div><div>${esc(x)}</div></div>`).join('') || '<p class="about">—</p>'}</div></div>
     </div>` : '';
-  const docs = g.documents;
-  const docLinks = docs ? [...(docs.concalls || []), ...(docs.annual_reports || [])].slice(0, 8) : [];
-  const docHtml = docLinks.length ? `<div class="panel" style="margin-top:14px"><h4>Filings &amp; concalls</h4><div class="docs">${docLinks.map((l) => `<a class="doclink" href="${esc(l.href)}" target="_blank" rel="noopener">${I.doc}<span>${esc(l.text)}</span>${I.ext}</a>`).join('')}</div></div>` : '';
+  const docHtml = renderDocsSection(g.documents);
   return `<div class="bucket">${bH('F', 'Management, governance & events')}
     ${trend}${flags}${docHtml}
     <div class="gapnote"><b>Board/auditor changes, related-party flags, litigation &amp; recent news</b> aren’t fetched here — the <b>Agent Thesis</b> researches material events live and flags governance risks.</div>
@@ -542,6 +540,91 @@ function finTableOpen(title, t) {
   const head = `<tr><th>${esc(title)}</th>${t.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
   const body = Object.entries(t.rows).map(([label, vals]) => `<tr><td>${esc(label)}</td>${vals.map((v) => `<td>${v == null ? '' : n2(v)}</td>`).join('')}</tr>`).join('');
   return `<div class="dwrap"><table class="dtable"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+/* ---------- documents: filings & concalls as useful cards + in-app viewer ---------- */
+// Accepts the worker's rich shape (concalls/annual_reports/ratings of objects) and
+// the older {href,text} shape, and flattens to one openable card per document.
+function normalizeDocs(docs) {
+  if (!docs) return [];
+  const out = [];
+  const isPdf = (h) => /\.pdf(\?|#|$)/i.test(h);
+  const add = (arr, kind) => (arr || []).forEach((d) => {
+    if (!d) return;
+    if (typeof d === 'string') { out.push({ kind, type: 'Document', title: d, href: d, date: '', source: '', blurb: blurbFor(kind, ''), isPdf: isPdf(d) }); return; }
+    const href = d.href || d.url || ''; if (!href) return;
+    const type = d.type || d.label || d.text || 'Document';
+    out.push({
+      kind: d.kind || kind, type,
+      title: d.title || d.text || d.label || type,
+      date: d.date || '', source: d.source || '',
+      blurb: d.blurb || blurbFor(d.kind || kind, type),
+      href, isPdf: d.isPdf != null ? d.isPdf : isPdf(href),
+    });
+  });
+  if (Array.isArray(docs)) { add(docs, 'concall'); return out; }
+  add(docs.concalls, 'concall'); add(docs.annual_reports, 'annual'); add(docs.ratings, 'rating');
+  return out;
+}
+function blurbFor(kind, type) {
+  const t = (String(kind) + ' ' + String(type)).toLowerCase();
+  if (/annual/.test(t)) return 'Full-year report to shareholders';
+  if (/rating/.test(t)) return 'Agency credit-rating note';
+  if (/transcript/.test(t)) return 'Earnings-call transcript';
+  if (/note/.test(t)) return 'Concall notes / summary';
+  if (/ppt|present|deck/.test(t)) return 'Investor presentation slides';
+  if (/rec|audio/.test(t)) return 'Earnings-call recording';
+  if (/concall|earnings/.test(t)) return 'Earnings-call document';
+  return 'Company filing';
+}
+function docThumb(d) {
+  const t = (d.type + ' ' + d.kind).toLowerCase();
+  if (/annual/.test(t)) return ['t-annual', 'ANNUAL<br>REPORT'];
+  if (/rating/.test(t)) return ['t-rating', 'CREDIT<br>RATING'];
+  if (/note/.test(t)) return ['t-notes', 'CONCALL<br>NOTES'];
+  if (/ppt|present|deck/.test(t)) return ['t-ppt', 'INVESTOR<br>DECK'];
+  if (/rec|audio/.test(t)) return ['t-transcript', 'CALL<br>AUDIO'];
+  if (/transcript|concall|earnings/.test(t)) return ['t-transcript', 'CALL<br>TRANSCRIPT'];
+  return ['t-transcript', 'FILING'];
+}
+function docCard(d, idx) {
+  const [cls, label] = docThumb(d);
+  const fmt = d.isPdf ? 'PDF' : 'WEB';
+  const src = d.source ? `<span class="doc-src">${esc(String(d.source).toUpperCase())}</span>` : '';
+  const date = d.date ? `<span class="doc-date">${esc(d.date)}</span>` : '';
+  return `<button class="doccard" onclick="openDoc(${idx})" title="${esc(d.title)}">
+    <div class="doc-thumb ${cls}"><div class="doc-kind">${label}</div><span class="doc-fmt">${fmt}</span></div>
+    <div class="doc-meta">
+      <div class="doc-title">${esc(d.title)}</div>
+      <div class="doc-blurb">${esc(d.blurb)}</div>
+      <div class="doc-foot">${date}<span class="doc-open">${d.isPdf ? 'Preview' : 'Open'} &rarr;</span>${src}</div>
+    </div>
+  </button>`;
+}
+function renderDocsSection(docs) {
+  const list = normalizeDocs(docs);
+  state.activeDocs = list;
+  if (!list.length) return '';
+  return `<div class="panel" style="margin-top:14px"><h4>Filings &amp; concalls <span style="font-weight:500;color:var(--dim);font-size:12px">· ${list.length} document${list.length > 1 ? 's' : ''}</span></h4>
+    <div class="docgrid">${list.map((d, i) => docCard(d, i)).join('')}</div></div>`;
+}
+// Open a document: PDFs render inline in a modal (first page+) via Google's viewer
+// with an "open original" escape hatch; non-PDF links (e.g. exchange pages) open
+// directly in a new tab.
+function openDoc(idx) {
+  const d = (state.activeDocs || [])[idx];
+  if (!d || !d.href) return;
+  const url = d.href;
+  if (!d.isPdf) { window.open(url, '_blank', 'noopener'); return; }
+  const gv = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(url)}`;
+  const m = $('#modal');
+  m.className = 'modal viewer';
+  m.innerHTML = `<button class="close-x" onclick="closeOverlay()">✕</button>
+    <div class="dv-head"><div><div class="dv-title">${esc(d.title)}</div><div class="dv-sub">${esc(d.blurb || '')}${d.date ? ' · ' + esc(d.date) : ''}</div></div>
+      <a class="btn btn-ghost btn-sm" href="${esc(url)}" target="_blank" rel="noopener">${I.ext} Open original</a></div>
+    <div class="dv-body"><iframe class="dv-frame" src="${esc(gv)}" referrerpolicy="no-referrer" loading="lazy"></iframe>
+      <div class="dv-fallback">First-page preview via Google Docs Viewer. If it doesn't load, <a href="${esc(url)}" target="_blank" rel="noopener">open the original &#8599;</a>.</div></div>`;
+  showOverlay();
 }
 
 /* ---------- charts (SVG, themeable via currentColor / CSS vars) ---------- */

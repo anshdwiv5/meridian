@@ -192,7 +192,17 @@ async function handleApi(request, env, url) {
     // Serve the cached verdict unless the user asked to regenerate (saves quota).
     if (!force) {
       const cached = await db.prepare(`SELECT thesis_json, thesis_at FROM stocks WHERE symbol=?`).bind(symbol).first();
-      if (cached && cached.thesis_json) { try { return json({ symbol, thesis: JSON.parse(cached.thesis_json), cached: true, thesis_at: cached.thesis_at }); } catch {} }
+      if (cached && cached.thesis_json) {
+        try {
+          const cj = JSON.parse(cached.thesis_json);
+          // Only serve a cache that actually has content — older builds could cache a
+          // degenerate empty object, which rendered as a blank WATCH. Those fall
+          // through and regenerate automatically.
+          if (cj && (cj.executive_thesis || (cj.scores && cj.scores.total != null) || (Array.isArray(cj.bull_case) && cj.bull_case.length))) {
+            return json({ symbol, thesis: cj, cached: true, thesis_at: cached.thesis_at });
+          }
+        } catch {}
+      }
     }
     const r = await buildPacket(db, symbol, false);
     if (r.error) return json({ error: r.error, symbol }, 404);
@@ -577,18 +587,9 @@ function parseCompany(html) {
     if (pledgeKey && shTrend.rows[pledgeKey]?.length) out.pledge = shTrend.rows[pledgeKey].at(-1);
   }
 
-  // --- documents: concall transcripts, annual reports, credit ratings (links only) ---
-  const docSection = sliceSection(html, 'documents');
-  if (docSection) {
-    const links = [...docSection.matchAll(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
-      .map((a) => ({ href: a[1], text: decodeEntities(stripTags(a[2])).trim() }))
-      .filter((l) => l.text);
-    out.detail.documents = {
-      concalls:       links.filter((l) => /concall|transcript|earnings call/i.test(l.text)).slice(0, 8),
-      annual_reports: links.filter((l) => /annual report/i.test(l.text)).slice(0, 6),
-      ratings:        links.filter((l) => /rating/i.test(l.text)).slice(0, 4),
-    };
-  }
+  // --- documents: concall transcripts, annual reports, credit ratings, with
+  //     date / type / source captured so the UI can render real document cards ---
+  out.detail.documents = parseDocuments(sliceSection(html, 'documents'));
 
   return out;
 }
@@ -620,6 +621,86 @@ function parseDataTable(scopeHtml) {
     rows[label] = cells.slice(1).map((v) => numOrNull(v));
   }
   return (columns.length || Object.keys(rows).length) ? { columns, rows } : null;
+}
+
+// Parse Screener's "Documents" section into useful, openable items grouped by
+// kind. Screener lays this out as headed sub-sections (Annual Reports, Concalls,
+// Credit Ratings); within each, <li> rows carry a date label plus one or more
+// links (Transcript / Notes / PPT / REC). We capture date + type + source so the
+// UI can render real document cards instead of bare links. Degrades gracefully to
+// classify-by-link-text when the heading/list structure isn't found.
+function parseDocuments(section) {
+  const out = { concalls: [], annual_reports: [], ratings: [] };
+  if (!section) return out;
+  let chunks = [];
+  const re = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>([\s\S]*?)(?=<h[1-4][^>]*>|$)/gi;
+  let m;
+  while ((m = re.exec(section))) chunks.push({ head: decodeEntities(stripTags(m[1])).trim().toLowerCase(), html: m[2] });
+  if (!chunks.length) chunks = [{ head: '', html: section }];
+
+  for (const ch of chunks) {
+    const bucket = /annual/.test(ch.head) ? 'annual'
+      : /rating/.test(ch.head) ? 'rating'
+      : /concall|earnings|transcript|presentation/.test(ch.head) ? 'concall' : '';
+    const lis = [...ch.html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((x) => x[1]);
+    const rows = lis.length ? lis : [ch.html];
+    for (const li of rows) {
+      const links = [...li.matchAll(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
+        .map((a) => ({ href: decodeEntities(a[1]), label: decodeEntities(stripTags(a[2])).replace(/\s+/g, ' ').trim() }))
+        .filter((l) => l.href && /^https?:|^\//i.test(l.href));
+      if (!links.length) continue;
+      const liText = decodeEntities(stripTags(li.replace(/<a[\s\S]*?<\/a>/gi, ' '))).replace(/\s+/g, ' ').trim();
+      const date = matchDate(liText) || matchDate(links.map((l) => l.label).join(' '));
+      const source = (liText.match(/from\s+([a-z]{2,5})\b/i) || [])[1] || '';
+      for (const l of links) {
+        const d = classifyDoc(l, bucket, date, source, liText);
+        out[d._bucket].push({ kind: d.kind, type: d.type, title: d.title, date: d.date, source: d.source, href: l.href, isPdf: /\.pdf(\?|#|$)/i.test(l.href) });
+      }
+    }
+  }
+  out.concalls = out.concalls.slice(0, 12);
+  out.annual_reports = out.annual_reports.slice(0, 8);
+  out.ratings = out.ratings.slice(0, 6);
+  return out;
+}
+
+function classifyDoc(l, bucket, date, source, liText) {
+  const label = l.label || '';
+  const hay = (label + ' ' + (liText || '')).toLowerCase();
+  let kind = bucket || 'concall';
+  if (!bucket) {
+    if (/annual report|financial year/i.test(hay)) kind = 'annual';
+    else if (/rating/i.test(hay)) kind = 'rating';
+    else kind = 'concall';
+  }
+  if (kind === 'annual') {
+    const yr = ((label.match(/\b(19|20)\d{2}\b/) || (liText || '').match(/\b(19|20)\d{2}\b/) || [])[0]) || '';
+    return { _bucket: 'annual_reports', kind, type: 'Annual Report', title: yr ? `Annual Report ${yr}` : (label || 'Annual Report'), date: yr || date || '', source };
+  }
+  if (kind === 'rating') {
+    return { _bucket: 'ratings', kind, type: 'Credit Rating', title: (label && !/^rating$/i.test(label)) ? label : (date ? `Credit Rating ${date}` : 'Credit Rating'), date, source };
+  }
+  let type;
+  if (/transcript/i.test(label)) type = 'Transcript';
+  else if (/notes?/i.test(label)) type = 'Notes';
+  else if (/ppt|presentation/i.test(label)) type = 'PPT';
+  else if (/\brec\b|recording|audio/i.test(label)) type = 'Recording';
+  else if (/concall|earnings/i.test(label)) type = 'Concall';
+  else type = label || 'Concall';
+  return { _bucket: 'concalls', kind: 'concall', type, title: date ? `${date} ${type}` : type, date, source };
+}
+
+// Pull a human date out of free text: "Aug 2024", "Q1 FY24", "FY2024", a year.
+function matchDate(s) {
+  if (!s) return '';
+  const t = String(s);
+  let m = t.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*'?\s*(\d{2,4})\b/i);
+  if (m) { const mon = m[1][0].toUpperCase() + m[1].slice(1, 3).toLowerCase(); const y = m[2].length === 2 ? '20' + m[2] : m[2]; return `${mon} ${y}`; }
+  m = t.match(/\bQ[1-4]\s*FY?\s*\d{2,4}\b/i); if (m) return m[0].toUpperCase().replace(/\s+/g, ' ');
+  m = t.match(/\bFY\s*\d{2,4}\b/i); if (m) return m[0].toUpperCase().replace(/\s+/g, '');
+  m = t.match(/\bFinancial Year\s+(\d{4})\b/i); if (m) return m[1];
+  m = t.match(/\b(19|20)\d{2}\b/); if (m) return m[0];
+  return '';
 }
 
 /* ============================ Yahoo Finance (live price + chart) ============================ */
@@ -922,36 +1003,62 @@ async function runThesisGemini(env, userContent) {
   if (!key) throw new Error('GEMINI_API_KEY not configured — set it with: wrangler secret put GEMINI_API_KEY');
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const webResearch = String(env.THESIS_WEB_RESEARCH ?? 'true').toLowerCase() !== 'false';
-  const u = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
 
-  const generationConfig = { temperature: 0.4, maxOutputTokens: 8192 };
+  // Attempt 1 — grounded (Google Search) for the richest thesis. JSON is enforced
+  // by the prompt and parsed defensively. Gemini 2.5 "thinks" by default and those
+  // tokens are billed against the output budget, so we cap thinking AND give a
+  // generous output ceiling; otherwise large-company packets (e.g. Bajaj Auto)
+  // truncate the JSON and the verdict comes back empty — the root cause of the
+  // "works for some stocks, not others" bug.
+  if (webResearch) {
+    try {
+      return await callGemini(key, model, userContent, { tools: [{ google_search: {} }], thinkingBudget: 6144, maxOutputTokens: 32768 });
+    } catch (e) {
+      console.log('thesis: grounded attempt failed, falling back to schema mode —', String((e && e.message) || e));
+    }
+  }
+  // Attempt 2 (and the no-web-research path) — schema-locked JSON, tools off,
+  // thinking off. This reliably returns one complete, valid object for every
+  // stock, so a truncated or blocked grounded call never leaves the user with a
+  // blank verdict.
+  return await callGemini(key, model, userContent, {
+    responseMimeType: 'application/json', responseSchema: toGeminiSchema(THESIS_JSON_SCHEMA),
+    thinkingBudget: 0, maxOutputTokens: 16384,
+  });
+}
+
+// One Gemini call → a validated, normalized thesis object (or throws). Centralises
+// request shaping, finishReason handling, defensive JSON parsing and grounding.
+async function callGemini(key, model, userContent, opts = {}) {
+  const u = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  const generationConfig = { temperature: 0.4, maxOutputTokens: opts.maxOutputTokens || 16384 };
+  if (opts.responseMimeType) generationConfig.responseMimeType = opts.responseMimeType;
+  if (opts.responseSchema) generationConfig.responseSchema = opts.responseSchema;
+  // thinkingConfig is only valid on the 2.5 family — guard so custom models don't 400.
+  if (opts.thinkingBudget != null && /2[.\-]5/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: opts.thinkingBudget };
   const reqBody = {
     systemInstruction: { parts: [{ text: THESIS_SYSTEM_PROMPT }] },
     contents: [{ role: 'user', parts: [{ text: userContent }] }],
     generationConfig,
   };
-  if (webResearch) {
-    // Let the model fill the packet's gaps from the live web. With tools enabled
-    // we enforce JSON via the prompt + safeParseThesis (most model-version-safe),
-    // rather than responseSchema, since some models reject schema+tools together.
-    reqBody.tools = [{ google_search: {} }];
-  } else {
-    generationConfig.responseMimeType = 'application/json';
-    generationConfig.responseSchema = toGeminiSchema(THESIS_JSON_SCHEMA);
-  }
+  if (opts.tools) reqBody.tools = opts.tools;
 
   const r = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(reqBody) });
   if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`Gemini HTTP ${r.status}: ${t.slice(0, 300)}`); }
   const j = await r.json();
   const cand = j?.candidates?.[0];
+  const finish = cand?.finishReason;
   const text = (cand?.content?.parts || []).map((p) => p.text || '').join('');
-  if (!text) throw new Error('Gemini returned no content' + (j?.promptFeedback ? ` (${JSON.stringify(j.promptFeedback)})` : ''));
-  const thesis = safeParseThesis(text);
+  if (!text) throw new Error('Gemini returned no content' + (finish ? ` (finishReason ${finish})` : '') + (j?.promptFeedback ? ` ${JSON.stringify(j.promptFeedback)}` : ''));
+
+  let thesis;
+  try { thesis = normalizeThesis(safeParseThesis(text)); }
+  catch (e) { throw new Error((finish === 'MAX_TOKENS' ? 'thesis JSON truncated (MAX_TOKENS) — ' : '') + String((e && e.message) || e)); }
 
   // Attach grounding citations (the web sources the model used) for transparency.
   const gm = cand?.groundingMetadata;
   if (gm) {
-    const sources = (gm.groundingChunks || []).map((c) => c.web ? { title: c.web.title || c.web.uri, uri: c.web.uri } : null).filter(Boolean);
+    const sources = (gm.groundingChunks || []).map((c) => (c.web ? { title: c.web.title || c.web.uri, uri: c.web.uri } : null)).filter(Boolean);
     const seen = new Set(), uniq = [];
     for (const s of sources) { if (s.uri && !seen.has(s.uri)) { seen.add(s.uri); uniq.push(s); } }
     if (uniq.length) thesis._sources = uniq.slice(0, 12);
@@ -972,15 +1079,69 @@ async function runThesisWorkersAI(env, userContent) {
     max_tokens: 4096,
   });
   const out = res && (res.response ?? res);
-  return typeof out === 'string' ? safeParseThesis(out) : out;
+  return normalizeThesis(typeof out === 'string' ? safeParseThesis(out) : out);
+}
+
+// Coerce whatever the model returned into the exact shape the UI expects, filling
+// safe defaults and computing `total` when the model omits it. Throws on a
+// degenerate/empty object so the caller can fall back instead of caching (and the
+// UI rendering) a blank verdict.
+function normalizeThesis(t) {
+  if (!t || typeof t !== 'object' || Array.isArray(t)) throw new Error('thesis is not a JSON object');
+  const arr = (v) => (Array.isArray(v) ? v.filter((x) => x != null && String(x).trim()).map((x) => String(x).trim()) : []);
+  const str = (v) => (v == null ? '' : String(v).trim());
+  const int = (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? n : null; };
+  const s = t.scores && typeof t.scores === 'object' ? t.scores : {};
+  const pos = ['growth_runway', 'moat', 'financial_quality', 'management_governance', 'valuation', 'industry_attractiveness'];
+  const scores = {};
+  for (const k of pos) scores[k] = int(s[k]);
+  scores.risk_penalty = int(s.risk_penalty);
+  scores.total = int(s.total);
+  if (scores.total == null && pos.some((k) => scores[k] != null)) {
+    scores.total = pos.reduce((a, k) => a + (scores[k] || 0), 0) - (scores.risk_penalty || 0);
+  }
+  let verdict = str(t.verdict).toUpperCase();
+  if (!['BUY', 'WATCH', 'REJECT'].includes(verdict)) verdict = 'WATCH';
+  const exec = str(t.executive_thesis);
+  const bull = arr(t.bull_case), bear = arr(t.bear_case);
+  // Reject the empty shell that previously slipped through and rendered as a blank WATCH.
+  if (!exec && !bull.length && !bear.length && scores.total == null) throw new Error('thesis came back empty');
+  return {
+    executive_thesis: exec, bull_case: bull, bear_case: bear,
+    moat_assessment: str(t.moat_assessment), financial_quality: str(t.financial_quality),
+    valuation_assessment: str(t.valuation_assessment), industry_assessment: str(t.industry_assessment),
+    management_assessment: str(t.management_assessment),
+    key_risks: arr(t.key_risks), key_catalysts: arr(t.key_catalysts),
+    scores, verdict,
+    confidence: Math.max(0, Math.min(100, int(t.confidence) ?? 0)),
+    what_would_change_my_mind: arr(t.what_would_change_my_mind),
+  };
 }
 
 function safeParseThesis(text) {
-  let t = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  const raw = String(text == null ? '' : text);
+  const t = raw.replace(/```(?:json)?/gi, '').trim();
   try { return JSON.parse(t); } catch {}
-  const m = t.match(/\{[\s\S]*\}/);
-  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  const balanced = extractBalancedJson(t);
+  if (balanced) { try { return JSON.parse(balanced); } catch {} }
   throw new Error('model did not return valid JSON');
+}
+
+// Return the first complete, brace-balanced {...} object, ignoring any prose or
+// grounding text around it. Returns null if the braces never balance (truncated
+// output), which signals the caller to retry/fallback rather than parse garbage.
+function extractBalancedJson(s) {
+  const start = s.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0, inStr = false, escd = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { if (escd) escd = false; else if (c === '\\') escd = true; else if (c === '"') inStr = false; }
+    else if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') { if (--depth === 0) return s.slice(start, i + 1); }
+  }
+  return null;
 }
 
 /* ============================ helpers ============================ */
@@ -1048,4 +1209,4 @@ function numOrNull(v) {
 function titleCase(s) { return String(s || '').replace(/\b\w/g, (c) => c.toUpperCase()); }
 
 // Named exports for unit tests (no effect on the Worker runtime — these are pure).
-export { SCREENS, parseScreenTable, parseCompany, parseDataTable, sliceSection, assembleStockData, computeReturns, toGeminiSchema, THESIS_JSON_SCHEMA, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities, BROWSER_HEADERS };
+export { SCREENS, parseScreenTable, parseCompany, parseDataTable, sliceSection, assembleStockData, computeReturns, toGeminiSchema, THESIS_JSON_SCHEMA, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities, BROWSER_HEADERS, parseDocuments, classifyDoc, matchDate, safeParseThesis, extractBalancedJson, normalizeThesis };
