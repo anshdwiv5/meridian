@@ -3,13 +3,15 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Meridian — a personal long-term Indian-equity stock picker. Cloudflare Worker + Static Assets + D1. Live screen/company data from Screener.in (on demand), live price/charts from Yahoo Finance.",
+  "description": "Meridian — a personal long-term Indian-equity stock picker. Cloudflare Worker + Static Assets + D1. Screen/company data from Screener.in + price/returns from Yahoo Finance (on demand); AI thesis via Google Gemini with web-search grounding.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "pull": "node scripts/pull.mjs",
     "db:init": "wrangler d1 execute meridian-db --remote --file=./schema.sql",
     "db:init:local": "wrangler d1 execute meridian-db --local --file=./schema.sql",
+    "db:upgrade": "wrangler d1 execute meridian-db --remote --file=./migrations/0001_thesis_cache.sql",
+    "db:upgrade:local": "wrangler d1 execute meridian-db --local --file=./migrations/0001_thesis_cache.sql",
     "ingest": "node scripts/ingest.mjs",
     "db:seed:real": "wrangler d1 execute meridian-db --remote --file=./seed.real.sql",
     "db:seed:real:local": "wrangler d1 execute meridian-db --local --file=./seed.real.sql"

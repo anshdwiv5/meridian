@@ -2,9 +2,13 @@
 
 **A fixed direction in a noisy market** — a personal, long-term Indian-equity stock picker.
 
-You intersect real [Screener.in](https://www.screener.in) screens to get an **exact** shortlist, then judge each survivor across twelve research sections — business, peers, financials, ownership, management, risks, a live chart — before writing your thesis.
+A once-a-month, **use-and-close** tool in three steps:
 
-It runs as a single **Cloudflare Worker** that serves the UI from `/public` and an API from `/api/*`, backed by a **D1 (SQLite)** database. One deploy, one URL, no CORS, no separate server.
+1. **Shortlist** — intersect real [Screener.in](https://www.screener.in) screens to an *exact* shortlist (a name survives only if it’s in the top-N of **every** selected screen).
+2. **Research** — for each survivor, six buckets of fetched fundamentals (profile, financials, quality, valuation, industry, governance) **plus an AI thesis**: a structured 10–15-year BUY/WATCH/REJECT verdict written by **Google Gemini**, which uses the fetched data as ground truth and **researches the gaps live from the web**.
+3. **Allocation** — the names you flag in research gather here. Sizing & the monthly buy-plan are intentionally out of scope for now.
+
+It runs as a single **Cloudflare Worker** that serves the UI from `/public` and an API from `/api/*`, backed by **D1 (SQLite)**. One deploy, one URL, no CORS, no separate server. All of *your* working state (shortlist, allocation, generated theses) lives only in the browser session — close the tab and it’s gone.
 
 ---
 
@@ -12,71 +16,88 @@ It runs as a single **Cloudflare Worker** that serves the UI from `/public` and 
 
 Meridian is **lightweight and on demand** — it never pre-computes a universe.
 
-- **Quantitative.** When you view a screen or run an intersection, the Worker fetches **only the selected screens**, **only as deep as the depth you chose** (top-50 = one page each), parses the ranked table, and computes the overlap. A company survives only if it appears in the top-N of **every** selected screen — computed in SQL, so you get an honest **0** when nothing overlaps (the old HTML mock fabricated rows; this does not). Results are cached in D1 for ~12h so re-runs don't re-fetch.
-- **Qualitative.** A stock's sections are fetched **only when you open it** — one read of that company's Screener page (cached ~24h) plus a **live Yahoo Finance** price and chart. Selected stocks only.
+- **Shortlist (quantitative).** When you view a screen or run an intersection, the Worker fetches **only the selected screens**, **only as deep as the depth you chose**, parses the ranked table, and computes the overlap in SQL — an honest **0** when nothing overlaps. Cached briefly in D1.
+- **Research data (quantitative).** A stock’s six data buckets are fetched **only when you open it** — one read of its Screener page (full financial statements, ratios, ownership, peers, docs) plus one **Yahoo Finance** call (live price, 52-week range, return series). Parsed into a clean JSON “packet”.
+- **Thesis (qualitative + quantitative).** On **Generate**, the packet is sent to **Gemini 2.5 Flash** with **Google Search grounding** turned on. Gemini treats the packet as ground truth and researches what we *can’t* fetch (industry size, market share, regulation, recent news, concall highlights, forward view), then returns a structured JSON verdict with **cited web sources**. Cached per stock for the session.
 
-**Source & terms.** Screen and company data are read from Screener.in; price/charts from Yahoo Finance. Screener's Terms grant *personal, non-commercial transitory viewing* and restrict copying, mirroring, public display and commercial use — so **keep this deploy private to you and non-commercial**, and treat the brief D1 cache as a personal convenience. Be a good citizen: the design fetches little and infrequently.
+### What gets fetched vs not (Screener + Yahoo, the max-coverage free combo)
 
-**The one risk you can't know until you deploy:** Screener may rate-limit or block Cloudflare's datacenter IPs. If a screen shows *"couldn't reach Screener,"* use the built-in fallbacks below — you'll never be stuck with fake data.
+No single free API covers this whole spec for Indian equities — Screener is the richest free structured source; Yahoo supplies price/returns. The rest is filled by the agent’s web research, never fabricated.
+
+| Your requested data | Source | Status |
+|---|---|---|
+| Company name, ticker, exchange, sector, market cap, business description | Screener | ✅ Fetched |
+| Shares outstanding, free float, promoter %, FII/DII, pledge | Screener (+ computed) | ✅ Fetched |
+| Income statement, balance sheet, cash flow (5y annual + 12 quarters) | Screener | ✅ Fetched |
+| EBITDA, net debt, FCF, working capital, margins | computed from statements | ✅ Derived |
+| ROE / ROCE / ROA, asset turnover, interest cover, D/E, debt/EBITDA, days, CCC, FCF yield, CFO/PAT, CAGRs | Screener (+ computed) | ✅ Fetched/Derived |
+| Price, 52-week H/L, 1m–5y returns, volume | Yahoo (+ computed) | ✅ Fetched |
+| P/E, P/B, EV/EBITDA, EV/Sales, P/FCF, dividend yield, peer valuation | Screener + Yahoo (+ computed) | ✅ Derived |
+| HQ, fiscal year-end, listing date, top *named* institutional holders | — | ⚠️ Not fetched (agent may research) |
+| Forward P/E, PEG, beta | — | ⚠️ Not fetched (no free forward estimates) |
+| Industry size / TAM / SAM, industry growth, penetration, market share, regulatory & commodity exposure, cyclicality | **Agent web research** | 🔎 Researched live by Gemini, cited |
+| Board/auditor changes, related-party, litigation, M&A, product launches, guidance, **recent news** | **Agent web research** | 🔎 Researched live by Gemini, cited |
+| Concall transcript **text/summary**, investor-presentation highlights | Screener gives links; **agent researches content** | 🔎 Links fetched, narrative researched |
+
+The thesis prompt is explicit: quote the packet for anything quantitative, research the gaps from the web, label which is which, and **lower confidence when evidence is thin**.
 
 ---
 
-## Get it online (≈10 minutes)
+## What you must provide (the only things left)
 
-You need **Node 18+** (22 recommended), npm, and a free **Cloudflare account**. D1 and Workers are on the free tier.
+Everything is built. To go live, do these once:
+
+1. **A Google Gemini API key** (free tier) → set it as a Worker secret:
+   ```bash
+   npx wrangler secret put GEMINI_API_KEY
+   ```
+   Get one at https://aistudio.google.com/apikey. Until it’s set, the whole app works and the Agent Thesis tab simply shows “add your key”.
+2. **(Decision) the data provider.** Default is `screener` and needs nothing. If you later want a structured fundamentals API instead, set `DATA_PROVIDER` in `wrangler.toml` and implement its branch in `fetchCompanyRaw()` (a documented one-function seam) plus `wrangler secret put STOCK_API_KEY`.
+3. **Deploy** (and, if your D1 predates the AI agent, run the one-time column upgrade):
+   ```bash
+   npm install
+   npm run db:upgrade      # adds thesis-cache columns to an existing DB (skip on a fresh db:init)
+   npx wrangler deploy
+   ```
+
+That’s it — after step 1 + deploy the thesis is live.
+
+---
+
+## First-time setup (≈10 minutes)
+
+Node 18+ (22 recommended), npm, a free **Cloudflare account**. D1, Workers, and Workers AI are on the free tier.
 
 ```bash
-# 1. install
 npm install
-
-# 2. log in (opens a browser to authorise Wrangler)
 npx wrangler login
-
-# 3. create the database — this prints a database_id (a UUID)
-npx wrangler d1 create meridian-db
-#    paste that UUID into wrangler.toml -> [[d1_databases]] database_id
-
-# 4. create the tables (remote)
-npm run db:init
-
-# 5. (recommended) lock the manual-load fallback with a secret
-npx wrangler secret put ADMIN_TOKEN      # type any strong string when prompted
-
-# 6. deploy
+npx wrangler d1 create meridian-db        # prints a database_id (UUID)
+#   paste that UUID into wrangler.toml -> [[d1_databases]] database_id
+npm run db:init                            # create tables (remote)
+npx wrangler secret put ADMIN_TOKEN        # optional: locks the manual-load fallback
+npx wrangler secret put GEMINI_API_KEY     # the thesis agent
 npx wrangler deploy
 ```
 
-Wrangler prints your live URL, e.g. `https://meridian.<your-subdomain>.workers.dev`. Open it → home screen, eight screens under **Quantitative**. Tap a screen to pull it live, tick two and intersect.
+Run locally: `npm run db:init:local && npx wrangler dev` → http://localhost:8787
 
-> No seeding step. The eight screens self-register on first load; their lists fill in on demand.
-
-### Run locally first (optional)
-```bash
-npm run db:init:local
-npx wrangler dev          # http://localhost:8787
-```
+### Config knobs (`wrangler.toml` → `[vars]`)
+- `THESIS_PROVIDER` — `gemini` (default) or `workers-ai` (no key, on-platform Llama fallback).
+- `THESIS_WEB_RESEARCH` — `true` (default) to let Gemini fill gaps via Google Search; `false` for packet-only with strict JSON schema.
+- `DATA_PROVIDER` — `screener` (default). The finalise hook for an alternative source.
+- `GEMINI_MODEL` / `WORKERS_AI_MODEL` — override model names.
 
 ---
 
-## If Screener blocks the Worker's IP
+## If Screener blocks the Worker’s IP
 
-Two fallbacks, both keep the app fully accurate:
+Screener may rate-limit Cloudflare datacenter IPs. Two fallbacks keep the app accurate:
 
-**A) Load in the app (no terminal).** On the **Quantitative** tab click **“Load a screen manually.”** Pick the screen, paste the on-screen list (one company per line — row order = rank) or a CSV export, enter your `ADMIN_TOKEN`, and load. Repeat per screen. Intersections then run against this data.
+**A) Load in the app.** Step 1 → **Load a screen manually** → paste the on-screen list / CSV → optional `ADMIN_TOKEN` → load. Intersections then run on that data.
 
-**B) Push from your own machine (runs on your residential IP, not Cloudflare's).**
-1. Export each screen from Screener (or save the page list) into `./data/` using the `file` names in `scripts/screens.js` (e.g. `data/piotroski.csv`).
-2. `npm run ingest` → writes `seed.real.sql`. Then `npm run db:seed:real` to load it.
+**B) Push from your machine.** Export each screen to `./data/*.csv` (names in `scripts/screens.js`), `npm run ingest` → `seed.real.sql`, then `npm run db:seed:real`.
 
-Your CSVs and `seed.real.sql` are git-ignored.
-
----
-
-## The twelve judgement sections
-
-Snapshot · Business & Moat · **Industry & Peers** · Growth & Profitability · Financial Health & Earnings Quality · Valuation · Ownership & Smart Money · Management & Governance · Concall & Filings Digest · Charts (live) · Risks & Bear Case · My Thesis.
-
-Most fields come from the company's Screener page (ratios, pros/cons, compounded growth, shareholding, peers); price and the in-app chart come from Yahoo. Anything not reachable shows *"loads when reachable"* — never a fabricated number. Your thesis and conviction are saved per device (localStorage).
+For a permanent fix, set `SCRAPER_PROXY` (a ScrapingBee/ScraperAPI-style URL template) to route Screener fetches through residential IPs.
 
 ---
 
@@ -85,28 +106,30 @@ Most fields come from the company's Screener page (ratios, pros/cons, compounded
 | Method | Route | Returns |
 |---|---|---|
 | GET | `/api/screens` | All screens + cached counts + freshness |
-| GET | `/api/screens/:id?limit=N[&refresh=1]` | One screen's ranked list, fetched to depth N (25/50/100/150/200) |
-| POST | `/api/intersection` | Exact overlap. Body `{ "screenIds":["piotroski","value"], "limit":50, "refresh":false }`. `count` is `0` when nothing overlaps. |
-| GET | `/api/stocks/:symbol?refresh=1` | Fundamentals + parsed detail + live price for the Qualitative view |
+| GET | `/api/screens/:id?limit=N[&refresh=1]` | One screen’s ranked list (depth 25/50/100) |
+| POST | `/api/intersection` | Exact overlap. Body `{ screenIds, limit, refresh }`. `count` is `0` when nothing overlaps. |
+| GET | `/api/stocks/:symbol?refresh=1` | Fundamentals + parsed detail + **assembled 6-bucket packet** + live price |
 | GET | `/api/chart/:symbol?range=1y` | Yahoo price history for the in-app chart |
-| POST | `/api/admin/load` | Fallback manual load (header `x-admin-token`) |
+| POST | `/api/thesis/:symbol` | Run (or return cached) AI thesis. Body `{ refresh }`. Returns the structured verdict + web sources; `needsKey:true` if `GEMINI_API_KEY` is unset. |
+| POST | `/api/admin/load` | Manual fallback load (header `x-admin-token`) |
 
 ---
 
 ## Project layout
 
 ```
-src/worker.js          API + Screener/Yahoo fetch + parsing + exact intersection (the backend)
-public/                UI — index.html, styles.css, app.js
-schema.sql             D1 tables
-scripts/screens.js     the eight screens (name, lens, formula, Screener URL)
-scripts/ingest.mjs     optional: turn CSV exports into seed.real.sql
-wrangler.toml          Cloudflare config (paste your database_id here)
+src/worker.js          API + Screener/Yahoo fetch & parse + 6-bucket assembler + Gemini thesis agent
+public/index.html      3-step UI shell (Shortlist · Research · Allocation)
+public/styles.css      light/flat Groww-Zerodha styling (dark mode included)
+public/app.js          session state, step nav, data buckets + charts, thesis rendering
+schema.sql             D1 tables (now incl. thesis cache)
+migrations/0001_*.sql  in-place upgrade for an existing DB
+wrangler.toml          Cloudflare config + [ai] binding + vars; paste your database_id
 ```
 
+### Where to “finalise how stock info is fetched”
+`fetchCompanyRaw(symbol)` in `src/worker.js` is the single seam. Default returns the Screener company page (which `parseCompany` understands). To switch sources later, add a branch there keyed on `DATA_PROVIDER` and wire your `STOCK_API_KEY`.
+
 ## Notes
-- **Tune freshness** in `src/worker.js`: `SCREEN_TTL_MS` (12h) and `COMPANY_TTL_MS` (24h).
-- **Custom domain:** Cloudflare dashboard → Workers & Pages → meridian → Settings → Domains & Routes.
-- **Concall summaries** are intentionally a stub — wire an AI step over transcripts later if you want them.
-- **Insights** is a deliberate placeholder ("available to you soon") until you decide what belongs there.
-- Personal, non-commercial tool. You are responsible for your own use of third-party data under their terms.
+- Personal, non-commercial. Screener data under their terms (personal viewing) — keep this deploy private to you.
+- The thesis is AI-generated decision *support*, grounded in fetched data + cited web research. Verify before you act; it is not advice.

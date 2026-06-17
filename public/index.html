@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Meridian · a fixed direction in a noisy market</title>
-<meta name="description" content="Meridian · a personal long-term stock picker." />
+<title>Meridian · long-term stock picker</title>
+<meta name="description" content="Meridian · a personal long-term Indian-equity stock picker — screen, research, allocate." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
@@ -12,93 +12,64 @@
 <link rel="icon" type="image/svg+xml" href="/logo.svg" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#05131A" />
+<meta name="theme-color" content="#ffffff" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Meridian" />
 </head>
 <body>
 <div class="wrap">
 
-  <!-- TOP BAR -->
+  <!-- TOP BAR: brand · step navigator · utilities -->
   <header class="topbar">
-    <button class="brand" onclick="goHome()" aria-label="Meridian home">
+    <button class="brand" onclick="goStep(1)" aria-label="Meridian">
       <svg class="brandlogo" viewBox="0 0 200 200" aria-hidden="true" fill="none">
-        <circle cx="100" cy="100" r="64" fill="none" stroke="currentColor" stroke-width="6"/>
+        <circle cx="100" cy="100" r="64" fill="none" stroke="currentColor" stroke-width="7"/>
         <path d="M100 44 L104.5 50 L100 56 L95.5 50 Z" fill="currentColor"/>
-        <path d="M100 144 L104.5 150 L100 156 L95.5 150 Z" fill="currentColor"/>
-        <path d="M44 100 L50 95.5 L56 100 L50 104.5 Z" fill="currentColor"/>
-        <path d="M144 100 L150 95.5 L156 100 L150 104.5 Z" fill="currentColor"/>
-        <rect x="74" y="102" width="15" height="38" rx="2" fill="currentColor"/>
-        <rect x="93" y="84" width="15" height="56" rx="2" fill="currentColor"/>
-        <rect x="112" y="66" width="15" height="74" rx="2" fill="currentColor"/>
-        <path d="M48 134 C 86 128, 118 104, 150 60" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+        <path d="M48 134 C 86 128, 118 104, 150 60" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
         <path d="M161 47 L139 57 L156 71 Z" fill="currentColor"/>
-        <g fill="currentColor" font-family="Inter, sans-serif" font-weight="700" font-size="24" text-anchor="middle">
-          <text x="100" y="31">N</text><text x="100" y="191">S</text><text x="21" y="109">W</text><text x="179" y="109">E</text>
-        </g>
       </svg>
       <span class="name">Meridian</span>
     </button>
-    <nav class="topnav">
-      <button onclick="openInfo('howto')">How to Use</button>
-      <button onclick="openInfo('about')">About Meridian</button>
-      <button class="toggle" onclick="toggleTheme()" aria-label="Toggle theme" id="themeBtn"></button>
-    </nav>
-  </header>
 
-  <!-- TAB BANNER (separate, under the top bar) -->
-  <nav class="tabbar" aria-label="Sections">
-    <div class="tabbar-inner">
-      <button class="tab" data-view="insights" onclick="setView('insights')">Insights</button>
-      <button class="tab" data-view="quant" onclick="setView('quant')">Quantitative <span class="pip" id="pipQuant">0</span></button>
-      <button class="tab" data-view="qual" onclick="setView('qual')">Qualitative <span class="pip" id="pipQual">0</span></button>
+    <nav class="stepper" id="stepper" aria-label="Steps">
+      <button class="step" data-step="1" onclick="goStep(1)"><span class="sn">1</span> Shortlist <span class="badge" id="badge1">0</span></button>
+      <span class="steptick"></span>
+      <button class="step" data-step="2" onclick="goStep(2)"><span class="sn">2</span> Research <span class="badge" id="badge2">0</span></button>
+      <span class="steptick"></span>
+      <button class="step" data-step="3" onclick="goStep(3)"><span class="sn">3</span> Allocation <span class="badge" id="badge3">0</span></button>
+    </nav>
+
+    <div class="topright">
+      <button class="tlink" onclick="openInfo('howto')">How</button>
+      <button class="tlink" onclick="openInfo('about')">About</button>
+      <button class="toggle" onclick="toggleTheme()" aria-label="Toggle theme" id="themeBtn"></button>
     </div>
-  </nav>
+  </header>
 
   <main class="stage">
 
-    <!-- HOME / HERO (its own view — never shown when a tab is clicked) -->
-    <section class="view show" id="view-home">
-      <div class="hero">
-        <div class="ring"></div>
-        <div class="eyebrow"><span class="dot"></span> Personal stock picker</div>
-        <h1>A fixed direction in a <span class="grad">noisy market</span></h1>
-        <div class="cta">
-          <button class="btn btn-primary" onclick="setView('quant')">Pick Stocks
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- INSIGHTS (no assumed content) -->
-    <section class="view" id="view-insights">
+    <!-- ===================== STEP 1 · SHORTLIST ===================== -->
+    <section class="view" id="view-1">
       <div class="page">
-        <div class="comingsoon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h2>Insights</h2>
-          <p>This will be available to you soon.</p>
+        <div class="phead">
+          <div>
+            <h1 class="ptitle">Build the shortlist</h1>
+            <p class="psub">Pick the screens you trust, take their intersection, and send the survivors to research.</p>
+          </div>
+          <div class="phead-actions">
+            <button class="ghostbtn" onclick="openLoader()">Load a screen manually</button>
+          </div>
         </div>
-      </div>
-    </section>
-
-    <!-- QUANTITATIVE -->
-    <section class="view" id="view-quant">
-      <div class="page">
-        <p class="sec-head">Shortlist</p>
-        <h2 class="h2">Screens that each check one thing well.</h2>
-        <p class="lead">Tap a screen for its live ranked list. Select two or more, then find the intersection: the names that pass every screen at once.</p>
 
         <div class="legend" id="legend"></div>
         <div class="screen-grid" id="screenGrid"></div>
 
-        <div class="actionbar">
-          <div class="info"><b id="selCount">0</b> screens selected · select 2+ to intersect</div>
+        <div class="actionbar" id="actionbar">
+          <div class="info"><b id="selCount">0</b> screens selected · pick 2+ to intersect</div>
           <div class="right">
-            <button class="btn-sm btn-clear" onclick="clearSel()">Clear</button>
-            <button class="btn-sm btn-go" id="interBtn" onclick="openInterDialog()" disabled>Find intersection</button>
+            <button class="btn btn-ghost" onclick="clearSel()">Clear</button>
+            <button class="btn btn-primary" id="interBtn" onclick="openInterDialog()" disabled>Find intersection</button>
           </div>
         </div>
 
@@ -107,22 +78,37 @@
       </div>
     </section>
 
-    <!-- QUALITATIVE -->
-    <section class="view" id="view-qual">
-      <div class="page">
-        <div id="qualList">
-          <p class="sec-head">Judgement</p>
-          <h2 class="h2">Where conviction gets built.</h2>
-          <p class="lead">Every stock you add lands here. Open one to pull the full picture on demand: business, peers, financials, ownership, management, risks, and a live chart.</p>
-          <div id="slMount"></div>
+    <!-- ===================== STEP 2 · RESEARCH ===================== -->
+    <section class="view" id="view-2">
+      <div class="research" id="research">
+        <aside class="sidebar" id="sidebar"></aside>
+        <div class="rs-main" id="rsMain">
+          <div class="rs-head" id="rsHead"></div>
+          <div class="rs-tabbar" id="rsTabs" style="display:none">
+            <button class="rs-tab on" data-tab="data" onclick="setTab('data')">Stock Data</button>
+            <button class="rs-tab" data-tab="thesis" onclick="setTab('thesis')">Agent Thesis</button>
+          </div>
+          <div class="rs-body" id="rsBody"></div>
         </div>
-        <div class="detail" id="qualDetail" style="display:none"></div>
+      </div>
+    </section>
+
+    <!-- ===================== STEP 3 · ALLOCATION ===================== -->
+    <section class="view" id="view-3">
+      <div class="page">
+        <div class="phead">
+          <div>
+            <h1 class="ptitle">Allocation</h1>
+            <p class="psub">The names you flagged in research. Sizing &amp; monthly buy plan come next — out of scope for this build.</p>
+          </div>
+        </div>
+        <div id="allocMount"></div>
       </div>
     </section>
 
   </main>
 
-  <div class="footnote" id="footnote">Meridian</div>
+  <div class="footnote" id="footnote"></div>
 </div>
 
 <!-- OVERLAY / MODAL -->

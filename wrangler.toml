@@ -15,5 +15,21 @@ binding = "DB"
 database_name = "meridian-db"
 database_id = "0c77fdeb-388e-4597-a876-9698240b7ec4"
 
-# Secret (do NOT put it here — set with:  wrangler secret put ADMIN_TOKEN):
-#   ADMIN_TOKEN protects the manual /api/admin/load fallback.
+# Workers AI — zero-key fallback for the thesis agent (used when THESIS_PROVIDER
+# = "workers-ai"). Harmless to leave bound even if you use Gemini.
+[ai]
+binding = "AI"
+
+# Non-secret config. Override defaults here if you like.
+[vars]
+THESIS_PROVIDER     = "gemini"    # "gemini" (default, needs GEMINI_API_KEY) | "workers-ai" (no key)
+THESIS_WEB_RESEARCH = "true"      # let Gemini fill the packet's gaps via Google Search grounding
+DATA_PROVIDER       = "screener"  # where stock fundamentals come from (finalise hook in fetchCompanyRaw)
+# GEMINI_MODEL      = "gemini-2.5-flash"
+# WORKERS_AI_MODEL  = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+# Secrets — do NOT put values here. Set each with:  wrangler secret put NAME
+#   GEMINI_API_KEY  — required for the Gemini thesis agent (the one key you still owe)
+#   ADMIN_TOKEN     — protects the manual /api/admin/load fallback
+#   SCRAPER_PROXY   — optional residential-proxy template if Screener blocks Cloudflare IPs
+#   STOCK_API_KEY   — only if you finalise an alternative DATA_PROVIDER

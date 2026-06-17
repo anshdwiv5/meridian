@@ -62,6 +62,8 @@ CREATE TABLE stocks (
   fii            REAL,
   dii            REAL,
   earnings_yield REAL,
-  detail_json    TEXT,    -- parsed sections (about, pros, cons, peers, shareholding…)
-  fetched_at     INTEGER  -- epoch ms of last company-page fetch (NULL = never)
+  detail_json    TEXT,    -- parsed sections (financials, pros/cons, peers, shareholding…)
+  fetched_at     INTEGER, -- epoch ms of last company-page fetch (NULL = never)
+  thesis_json    TEXT,    -- cached AI thesis verdict JSON (NULL = not generated yet)
+  thesis_at      INTEGER  -- epoch ms of last thesis generation
 );

@@ -97,6 +97,7 @@ async function handleApi(request, env, url) {
   const db = env.DB;
   if (!db) return json({ error: 'D1 binding "DB" is not configured. See README step 3.' }, 500);
   PROXY = env.SCRAPER_PROXY || '';
+  ENV = env;                       // expose bindings/secrets to the helper layer
   await ensureScreensSeeded(db);
 
   // GET /api/health
@@ -177,17 +178,34 @@ async function handleApi(request, env, url) {
   if (mStock && request.method === 'GET') {
     const symbol = decodeURIComponent(mStock[1]);
     const force = url.searchParams.get('refresh') === '1';
-    const status = await ensureCompany(db, symbol, force);
-    const s = await db.prepare(`SELECT * FROM stocks WHERE symbol = ?`).bind(symbol).first();
-    if (!s) return json({ error: 'stock not found', symbol, source: status }, 404);
-    let detail = null;
-    if (s.detail_json) { try { detail = JSON.parse(s.detail_json); } catch { detail = null; } }
-    const { detail_json, ...fields } = s;
-    // live price (1 lightweight Yahoo call)
-    let live = null;
-    try { live = await yahooQuote(fields.ticker || symbol); } catch {}
-    if (live && live.price != null) { fields.price = live.price; fields.live = true; }
-    return json({ stock: fields, detail, live, source: status });
+    const r = await buildPacket(db, symbol, force);
+    if (r.error) return json({ error: r.error, symbol, source: r.status }, 404);
+    return json({ stock: r.fields, detail: r.detail, packet: r.packet, live: r.live, source: r.status });
+  }
+
+  // POST /api/thesis/:symbol  { refresh?:bool }  -> run (or return cached) AI thesis
+  const mThesis = p.match(/^\/api\/thesis\/([^/]+)$/);
+  if (mThesis && request.method === 'POST') {
+    const symbol = decodeURIComponent(mThesis[1]);
+    const body = await request.json().catch(() => ({}));
+    const force = !!body.refresh;
+    // Serve the cached verdict unless the user asked to regenerate (saves quota).
+    if (!force) {
+      const cached = await db.prepare(`SELECT thesis_json, thesis_at FROM stocks WHERE symbol=?`).bind(symbol).first();
+      if (cached && cached.thesis_json) { try { return json({ symbol, thesis: JSON.parse(cached.thesis_json), cached: true, thesis_at: cached.thesis_at }); } catch {} }
+    }
+    const r = await buildPacket(db, symbol, false);
+    if (r.error) return json({ error: r.error, symbol }, 404);
+    let thesis;
+    try {
+      thesis = await runThesis(r.packet, env);
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      // Soft-fail so the UI can show "add your key" instead of a hard error.
+      return json({ symbol, error: msg, needsKey: /api key|GEMINI|not configured|no .*provider/i.test(msg) }, 200);
+    }
+    await db.prepare(`UPDATE stocks SET thesis_json=?, thesis_at=? WHERE symbol=?`).bind(JSON.stringify(thesis), Date.now(), symbol).run();
+    return json({ symbol, thesis, cached: false, thesis_at: Date.now(), gaps: r.packet.gaps });
   }
 
   // GET /api/chart/:symbol?range=1y&interval=1wk  -> Yahoo history for the in-app chart
@@ -391,13 +409,45 @@ function parseScreenTable(html) {
 
 /* ============================ company-page fetch / parse ============================ */
 
+// Load a symbol's fundamentals (Screener, cached) + one Yahoo call, then build
+// the assembled 6-bucket packet. Shared by /api/stocks (research UI) and
+// /api/thesis (agent input) so both see exactly the same data.
+async function buildPacket(db, symbol, force) {
+  const status = await ensureCompany(db, symbol, force);
+  const s = await db.prepare(`SELECT * FROM stocks WHERE symbol = ?`).bind(symbol).first();
+  if (!s) return { error: 'stock not found — add it from a screen first', status };
+  let detail = {};
+  if (s.detail_json) { try { detail = JSON.parse(s.detail_json) || {}; } catch { detail = {}; } }
+  const { detail_json, thesis_json, thesis_at, ...fields } = s;
+  Object.assign(fields, detail._scalars || {});             // book value, 52w, pledge — no dedicated column
+  let chart = null;
+  try { chart = await yahooChart(fields.ticker || symbol, '5y', '1mo'); } catch {}
+  const market = chart ? {
+    price: chart.price, prevClose: chart.prevClose, currency: chart.currency,
+    high_52w: chart.high_52w, low_52w: chart.low_52w, volume: chart.volume, exchange: chart.exchange, points: chart.points,
+  } : {};
+  let live = null;
+  if (chart && chart.price != null) { fields.price = chart.price; fields.live = true; live = { price: chart.price, prevClose: chart.prevClose, currency: chart.currency }; }
+  const packet = assembleStockData(fields, detail, market);
+  return { fields, detail, packet, live, status };
+}
+
 async function ensureCompany(db, symbol, force) {
   const row = await db.prepare(`SELECT symbol, ticker, fetched_at FROM stocks WHERE symbol=?`).bind(symbol).first();
   if (!row) return { from: 'none', error: 'unknown symbol, add it from a screen first' };
   if (row.fetched_at && (Date.now() - row.fetched_at) < COMPANY_TTL_MS) return { from: 'cache', fetched_at: row.fetched_at };
   try {
-    const html = await fetchText(`${SCREENER}/company/${encodeURIComponent(symbol)}/consolidated/`);
+    const html = await fetchCompanyRaw(symbol);
     const d = parseCompany(html);
+    // Derive D/E (and let the assembler reuse the same logic) so the step-1 cards
+    // have leverage too; stash the extra parsed scalars in detail_json since they
+    // have no dedicated column.
+    const derived = assembleStockData(d, d.detail || {}, {});
+    d.detail = d.detail || {};
+    d.detail._scalars = {
+      book_value: d.book_value ?? null, face_value: d.face_value ?? null,
+      high_52w: d.high_52w ?? null, low_52w: d.low_52w ?? null, pledge: d.pledge ?? null,
+    };
     await db.prepare(`
       UPDATE stocks SET company=COALESCE(?,company), sector=COALESCE(?,sector), mcap=COALESCE(?,mcap),
         price=COALESCE(?,price), roce=COALESCE(?,roce), roe=COALESCE(?,roe), pe=COALESCE(?,pe),
@@ -405,8 +455,9 @@ async function ensureCompany(db, symbol, force) {
         promoter=COALESCE(?,promoter), fii=COALESCE(?,fii), dii=COALESCE(?,dii),
         sales_cagr=COALESCE(?,sales_cagr), profit_cagr=COALESCE(?,profit_cagr),
         detail_json=?, fetched_at=? WHERE symbol=?`)
-      .bind(d.company, d.sector, d.mcap, d.price, d.roce, d.roe, d.pe, d.opm, d.de, d.div_yield,
-            d.promoter, d.fii, d.dii, d.sales_cagr, d.profit_cagr,
+      .bind(d.company ?? null, d.sector ?? null, d.mcap ?? null, d.price ?? null, d.roce ?? null, d.roe ?? null, d.pe ?? null,
+            d.opm ?? null, derived.quality.debt_to_equity ?? null, d.div_yield ?? null,
+            d.promoter ?? null, d.fii ?? null, d.dii ?? null, d.sales_cagr ?? null, d.profit_cagr ?? null,
             JSON.stringify(d.detail || {}), Date.now(), symbol).run();
     return { from: 'screener', fetched_at: Date.now() };
   } catch (e) {
@@ -433,6 +484,13 @@ function parseCompany(html) {
   out.roce = numOrNull(R('roce'));
   out.roe = numOrNull(R('roe'));
   out.div_yield = numOrNull(R('dividend yield'));
+  out.book_value = numOrNull(R('book value'));
+  out.face_value = numOrNull(R('face value'));
+  // "High / Low" holds TWO numbers in one <li>; grab both directly (the generic
+  // value reader stops at the first </span> and would drop the low).
+  const hlLi = (ulRatios.match(/high\s*\/\s*low[\s\S]*?<\/li>/i) || [])[0] || '';
+  const hlNums = [...hlLi.matchAll(/class="number"[^>]*>([\s\S]*?)<\/span>/gi)].map((m) => numOrNull(stripTags(m[1])));
+  if (hlNums.length >= 2) { out.high_52w = hlNums[0]; out.low_52w = hlNums[1]; }
   out.detail.ratios = ratios;
 
   // --- about / sector ---
@@ -493,7 +551,75 @@ function parseCompany(html) {
     }
     if (peers.length) out.detail.peers = { headers: heads, rows: peers };
   }
+
+  // --- FULL financial statements (annual P&L / Balance Sheet / Cash Flow, the
+  //     quarterly table, and the ratios table). These live in <section id="…">
+  //     blocks that the original parser ignored — they are the backbone of the
+  //     research view and the single biggest input to the thesis agent. ---
+  out.detail.financials = {
+    quarters:      parseDataTable(sliceSection(html, 'quarters')),
+    pnl:           parseDataTable(sliceSection(html, 'profit-loss')),
+    balance_sheet: parseDataTable(sliceSection(html, 'balance-sheet')),
+    cash_flow:     parseDataTable(sliceSection(html, 'cash-flow')),
+    ratios:        parseDataTable(sliceSection(html, 'ratios')),
+  };
+  // Operating margin from the latest annual P&L "OPM %" row (used by step-1 cards).
+  const pnlRows = out.detail.financials.pnl?.rows || {};
+  const opmKey = Object.keys(pnlRows).find((k) => /opm/i.test(k));
+  if (opmKey && pnlRows[opmKey]?.length) out.opm = pnlRows[opmKey].at(-1);
+
+  // --- shareholding TREND (every reported period, not just the latest) + pledge ---
+  const shSection = sliceSection(html, 'shareholding');
+  const shTrend = parseDataTable(shSection);
+  if (shTrend) {
+    out.detail.shareholding_trend = shTrend;
+    const pledgeKey = Object.keys(shTrend.rows).find((k) => /pledge/i.test(k));
+    if (pledgeKey && shTrend.rows[pledgeKey]?.length) out.pledge = shTrend.rows[pledgeKey].at(-1);
+  }
+
+  // --- documents: concall transcripts, annual reports, credit ratings (links only) ---
+  const docSection = sliceSection(html, 'documents');
+  if (docSection) {
+    const links = [...docSection.matchAll(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
+      .map((a) => ({ href: a[1], text: decodeEntities(stripTags(a[2])).trim() }))
+      .filter((l) => l.text);
+    out.detail.documents = {
+      concalls:       links.filter((l) => /concall|transcript|earnings call/i.test(l.text)).slice(0, 8),
+      annual_reports: links.filter((l) => /annual report/i.test(l.text)).slice(0, 6),
+      ratings:        links.filter((l) => /rating/i.test(l.text)).slice(0, 4),
+    };
+  }
+
   return out;
+}
+
+// Extract a single <section id="…">…</section> block. Screener wraps each
+// statement in its own non-nested section, so a non-greedy match is safe.
+function sliceSection(html, id) {
+  const m = html.match(new RegExp('<section[^>]*\\sid="' + id + '"[\\s\\S]*?</section>', 'i'));
+  return m ? m[0] : '';
+}
+
+// Generic parser for Screener's financial "data-table"s (P&L, Balance Sheet,
+// Cash Flow, Quarters, Ratios). Returns { columns:[periods…], rows:{ label:[nums…] } }
+// with values aligned to columns. Numbers are parsed; blanks become null.
+function parseDataTable(scopeHtml) {
+  if (!scopeHtml) return null;
+  const tbl = (scopeHtml.match(/<table[^>]*>([\s\S]*?)<\/table>/i) || [])[1];
+  if (!tbl) return null;
+  const head = (tbl.match(/<thead[\s\S]*?<\/thead>/i) || [])[0] || '';
+  let columns = [...head.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map((m) => decodeEntities(stripTags(m[1])).trim());
+  if (columns.length) columns = columns.slice(1); // first header cell is the (empty) label column
+  const body = (tbl.match(/<tbody[\s\S]*?<\/tbody>/i) || [])[0] || tbl;
+  const rows = {};
+  for (const tr of body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...tr[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((c) => decodeEntities(stripTags(c[1])).trim());
+    if (cells.length < 2) continue;
+    const label = cells[0].replace(/[+\-\s]+$/, '').replace(/\s+/g, ' ').trim();
+    if (!label) continue;
+    rows[label] = cells.slice(1).map((v) => numOrNull(v));
+  }
+  return (columns.length || Object.keys(rows).length) ? { columns, rows } : null;
 }
 
 /* ============================ Yahoo Finance (live price + chart) ============================ */
@@ -517,13 +643,344 @@ async function yahooChart(code, range = '1y', interval = '1wk') {
   const points = [];
   for (let i = 0; i < ts.length; i++) if (close[i] != null) points.push({ t: ts[i] * 1000, c: Math.round(close[i] * 100) / 100 });
   const meta = res.meta || {};
-  return { ticker, currency: meta.currency || 'INR', price: meta.regularMarketPrice ?? null, prevClose: meta.chartPreviousClose ?? null, points };
+  return {
+    ticker, currency: meta.currency || 'INR',
+    price: meta.regularMarketPrice ?? null, prevClose: meta.chartPreviousClose ?? null,
+    high_52w: meta.fiftyTwoWeekHigh ?? null, low_52w: meta.fiftyTwoWeekLow ?? null,
+    volume: meta.regularMarketVolume ?? null, exchange: meta.exchangeName ?? null,
+    points,
+  };
 }
 
 async function yahooQuote(code) {
   // Use the chart endpoint's meta for a reliable last price without crumb auth.
   const d = await yahooChart(code, '5d', '1d');
   return { ticker: d.ticker, price: d.price ?? (d.points.at(-1)?.c ?? null), prevClose: d.prevClose, currency: d.currency };
+}
+
+/* ============================ data packet assembly ============================ */
+// Shape parsed Screener + Yahoo data into the six research buckets and compute
+// derived metrics. PURE function: produces the ONE object the research UI renders
+// and the thesis agent reasons over. Null-tolerant throughout; anything that
+// can't be sourced for free is recorded in `gaps` so the agent flags it honestly.
+function assembleStockData(stock, detail, market) {
+  detail = detail || {}; market = market || {};
+  const fin = detail.financials || {};
+  const pnl = fin.pnl, bs = fin.balance_sheet, cf = fin.cash_flow, rat = fin.ratios, q = fin.quarters;
+
+  const findRow = (t, ...res) => {
+    if (!t || !t.rows) return null;
+    const keys = Object.keys(t.rows);
+    for (const re of res) { const k = keys.find((x) => re.test(x)); if (k) return { label: k, values: t.rows[k], columns: t.columns || [] }; }
+    return null;
+  };
+  const clean = (v) => (v || []).filter((x) => x != null);
+  const last = (v) => { const a = clean(v); return a.length ? a[a.length - 1] : null; };
+  const first = (v) => { const a = clean(v); return a.length ? a[0] : null; };
+  const cagr = (s, e, yrs) => (s > 0 && e > 0 && yrs > 0) ? Math.round((Math.pow(e / s, 1 / yrs) - 1) * 1000) / 10 : null;
+  const r2 = (v, d = 2) => v == null || !isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d;
+  const series = (row) => row ? row.columns.map((c, i) => ({ p: c, v: row.values[i] ?? null })).filter((x) => x.v != null) : [];
+
+  // ---- statement rows ----
+  const rev = findRow(pnl, /^sales/i, /revenue/i, /total income/i);
+  const op = findRow(pnl, /operating profit/i);
+  const opmR = findRow(pnl, /opm/i);
+  const dep = findRow(pnl, /depreciation/i);
+  const intR = findRow(pnl, /interest/i);
+  const pat = findRow(pnl, /net profit/i, /profit after tax/i);
+  const eps = findRow(pnl, /eps/i);
+  const borrow = findRow(bs, /borrowing/i);
+  const eqCap = findRow(bs, /equity capital/i);
+  const reserves = findRow(bs, /reserves/i);
+  const totAssets = findRow(bs, /total assets/i);
+  const cashRow = findRow(bs, /^cash/i, /cash & bank/i, /cash and bank/i);
+  const cfo = findRow(cf, /operating activ/i);
+  const cfi = findRow(cf, /investing activ/i);
+  const roceR = findRow(rat, /roce/i);
+  const debtorD = findRow(rat, /debtor days/i, /receivable days/i);
+  const invD = findRow(rat, /inventory days/i);
+  const payD = findRow(rat, /days payable/i, /payable days/i);
+  const cccR = findRow(rat, /cash conversion/i);
+  const wcD = findRow(rat, /working capital days/i);
+
+  // ---- latest scalars ----
+  const lRev = last(rev?.values), lOP = last(op?.values), lDep = last(dep?.values);
+  const lPAT = last(pat?.values), lInt = last(intR?.values), lDebt = last(borrow?.values);
+  const lCash = last(cashRow?.values), lAssets = last(totAssets?.values);
+  const lCFO = last(cfo?.values), lCFI = last(cfi?.values);
+  const equity = ((last(eqCap?.values) || 0) + (last(reserves?.values) || 0)) || null;
+  // Screener "Operating Profit" excludes depreciation ⇒ ≈ EBITDA; EBIT = OP − Dep.
+  const ebitda = lOP, ebit = (lOP != null) ? lOP - (lDep || 0) : null;
+  const netDebt = (lDebt != null && lCash != null) ? lDebt - lCash : null;
+  const de = (lDebt != null && equity) ? r2(lDebt / equity) : (stock.de ?? null);
+  const fcf = (lCFO != null) ? lCFO + (lCFI || 0) : null; // CFI is net of capex (negative)
+  const ev = (stock.mcap != null) ? stock.mcap + (netDebt != null ? netDebt : (lDebt || 0)) : null;
+
+  // ---- CAGRs from the annual series ----
+  const yrs = (v) => Math.max(1, clean(v).length - 1);
+  const revCAGR = rev ? cagr(first(rev.values), last(rev.values), yrs(rev.values)) : null;
+  const patCAGR = pat ? cagr(first(pat.values), last(pat.values), yrs(pat.values)) : null;
+  const epsCAGR = eps ? cagr(first(eps.values), last(eps.values), yrs(eps.values)) : null;
+
+  // ---- valuation ----
+  const price = market.price ?? stock.price ?? null;
+  const pb = (price != null && stock.book_value) ? r2(price / stock.book_value) : null;
+
+  // ---- chart-ready paired series ----
+  const fcfSeries = (cfo) ? cfo.columns.map((c, i) => {
+    const o = cfo.values[i], inv = cfi ? cfi.values[i] : null;
+    return { p: c, v: (o != null ? o + (inv || 0) : null) };
+  }).filter((x) => x.v != null) : [];
+  const npmSeries = (rev && pat) ? rev.columns.map((c, i) => {
+    const s = rev.values[i], p = pat.values[i];
+    return { p: c, v: (s ? Math.round((p / s) * 1000) / 10 : null) };
+  }).filter((x) => x.v != null) : [];
+
+  const packet = {
+    as_of: new Date().toISOString().slice(0, 10),
+    profile: {
+      company: stock.company, symbol: stock.symbol, ticker: stock.ticker,
+      exchange: market.exchange || (/^\d+$/.test(String(stock.symbol)) ? 'BSE' : 'NSE'),
+      sector: stock.sector || null, about: detail.about || null,
+      market_cap_cr: stock.mcap ?? null,
+      shares_outstanding_cr: (stock.mcap != null && price) ? r2(stock.mcap / price) : null,
+      promoter_pct: stock.promoter ?? null, pledge_pct: stock.pledge ?? null,
+      fii_pct: stock.fii ?? null, dii_pct: stock.dii ?? null,
+      public_pct: (stock.promoter != null && stock.fii != null && stock.dii != null) ? r2(Math.max(0, 100 - stock.promoter - stock.fii - stock.dii), 1) : null,
+      face_value: stock.face_value ?? null, book_value: stock.book_value ?? null,
+    },
+    financials: {
+      annual: { pnl, balance_sheet: bs, cash_flow: cf }, quarterly: q,
+      charts: {
+        revenue: series(rev), pat: series(pat), opm: series(opmR), net_margin: npmSeries,
+        ocf: series(cfo), investing_cf: series(cfi), fcf: fcfSeries,
+        debt: series(borrow), cash: series(cashRow), reserves: series(reserves),
+      },
+    },
+    quality: {
+      roce_pct: stock.roce ?? last(roceR?.values), roce_trend: series(roceR),
+      roe_pct: stock.roe ?? null,
+      roa_pct: (lPAT != null && lAssets) ? r2(lPAT / lAssets * 100) : null,
+      asset_turnover: (lRev != null && lAssets) ? r2(lRev / lAssets) : null,
+      interest_coverage: (ebit != null && lInt) ? r2(ebit / lInt) : null,
+      debt_to_equity: de, debt_to_ebitda: (lDebt != null && ebitda) ? r2(lDebt / ebitda) : null,
+      total_debt_cr: lDebt, net_debt_cr: r2(netDebt), ebitda_cr: r2(ebitda),
+      debtor_days: last(debtorD?.values), inventory_days: last(invD?.values),
+      payable_days: last(payD?.values), cash_conversion_cycle: last(cccR?.values), working_capital_days: last(wcD?.values),
+      fcf_yield_pct: (fcf != null && stock.mcap) ? r2(fcf / stock.mcap * 100) : null,
+      cfo_to_pat: (lCFO != null && lPAT) ? r2(lCFO / lPAT) : null,
+      revenue_cagr_pct: revCAGR ?? stock.sales_cagr ?? null, pat_cagr_pct: patCAGR ?? stock.profit_cagr ?? null, eps_cagr_pct: epsCAGR,
+    },
+    valuation: {
+      price, high_52w: market.high_52w ?? stock.high_52w ?? null, low_52w: market.low_52w ?? stock.low_52w ?? null,
+      pe: stock.pe ?? null, pb, ev_ebitda: (ev != null && ebitda) ? r2(ev / ebitda) : null,
+      ev_sales: (ev != null && lRev) ? r2(ev / lRev) : null, p_fcf: (stock.mcap != null && fcf) ? r2(stock.mcap / fcf) : null,
+      dividend_yield_pct: stock.div_yield ?? null, returns: computeReturns(market.points || []),
+      volume: market.volume ?? null, ranges: detail.ranges || null, peers: detail.peers || null,
+    },
+    industry: {
+      sector: stock.sector || null, peers: detail.peers || null,
+      industry_size: null, industry_growth: null, market_share: null, // not in free structured sources
+    },
+    governance: {
+      promoter_pct: stock.promoter ?? null, pledge_pct: stock.pledge ?? null,
+      shareholding_trend: detail.shareholding_trend || null,
+      pros: detail.pros || [], cons: detail.cons || [], documents: detail.documents || null,
+    },
+    gaps: [],
+  };
+
+  const G = packet.gaps;
+  if (packet.valuation.pe == null) G.push('current P/E');
+  if (!packet.valuation.peers) G.push('peer comparison (Screener loads it dynamically; may be absent)');
+  if (packet.profile.about == null) G.push('business description');
+  if (netDebt == null) G.push('net debt (no explicit cash row on Screener; gross debt shown)');
+  G.push('forward P/E & PEG (no free forward estimates)');
+  G.push('beta');
+  G.push('industry TAM / market share / regulatory detail (not in free structured sources)');
+  G.push('concall transcript text & recent news (document links only in this build)');
+  return packet;
+}
+
+// 1m/3m/6m/1y/3y/5y price returns (%) from a Yahoo close series [{t,c}].
+function computeReturns(points) {
+  if (!points || points.length < 2) return {};
+  const now = points[points.length - 1];
+  const at = (days) => {
+    const target = now.t - days * 86400000; let best = points[0];
+    for (const p of points) if (Math.abs(p.t - target) < Math.abs(best.t - target)) best = p;
+    return best;
+  };
+  const r = (p) => (p && p.c) ? Math.round((now.c / p.c - 1) * 1000) / 10 : null;
+  return { '1m': r(at(30)), '3m': r(at(91)), '6m': r(at(182)), '1y': r(at(365)), '3y': r(at(1095)), '5y': r(at(1825)) };
+}
+
+/* ============================ thesis agent ============================ */
+// The equity-research system prompt (your spec). The model sees ONLY the data
+// packet assembled above, so it can't invent facts and must flag what's missing.
+const THESIS_SYSTEM_PROMPT = `You are an equity research analyst building a long-term (10-15 year) investment thesis for a monthly portfolio review system. You analyse ONE Indian-listed company at a time.
+
+DATA YOU RECEIVE
+A JSON "packet" of quantitative data fetched from Screener.in + Yahoo Finance: company profile, full historical financials (P&L, balance sheet, cash flow, quarterly results), efficiency/quality ratios, valuation multiples, ownership, peers, pros/cons, and a "gaps" array naming what could NOT be fetched.
+
+HOW TO USE THE DATA
+1. Treat the packet as your quantitative GROUND TRUTH. Quote its numbers; never contradict or invent them.
+2. For anything in the "gaps" array or otherwise missing — industry size / TAM, industry growth rate, market share, competitive position, regulatory & commodity exposure, recent news, board/auditor/litigation events, concall & management commentary, forward estimates — USE GOOGLE SEARCH to research it from reputable, recent sources.
+3. In your prose, clearly distinguish packet facts ("reported financials show…") from web-researched facts ("recent industry sources indicate…").
+4. Do NOT fabricate. If neither the packet nor a credible web search gives a reliable answer, say so explicitly and lower your confidence.
+5. Do NOT use short-term price action as a thesis driver. Focus on durable 10-15 year compounding.
+
+The investor buys monthly, holds 10-15 years, and wants a disciplined process that can beat index funds over time. The output feeds both a human and a UI dashboard.
+
+EVALUATE across: business quality, growth runway, moat, financial strength, cash generation, valuation, management/governance, industry structure, risks/bear case, catalysts/forward view.
+
+SCORING (integers): growth_runway 0-5, moat 0-5, financial_quality 0-5, management_governance 0-5, valuation 0-5, industry_attractiveness 0-5, risk_penalty 0-5 (SUBTRACTED). total = (sum of the six positives) − risk_penalty, range −5 to 30.
+
+DECISION RULES
+- BUY only with durable quality, acceptable valuation, and a believable 10-year compounding path.
+- WATCH if the business is good but valuation, evidence, or risk profile is incomplete.
+- REJECT if the thesis leans on weak evidence, fragile economics, poor governance, or a broken balance sheet.
+
+confidence is 0-100 and MUST be lower when packet gaps are large or web evidence is thin.
+
+OUTPUT — return ONLY one valid JSON object (no markdown fences, no preamble) with EXACTLY these keys:
+{
+ "executive_thesis": "one paragraph",
+ "bull_case": ["3-5 evidence-backed points"],
+ "bear_case": ["3-5 evidence-backed points"],
+ "moat_assessment": "",
+ "financial_quality": "",
+ "valuation_assessment": "",
+ "industry_assessment": "",
+ "management_assessment": "",
+ "key_risks": [],
+ "key_catalysts": [],
+ "scores": { "growth_runway":0, "moat":0, "financial_quality":0, "management_governance":0, "valuation":0, "industry_attractiveness":0, "risk_penalty":0, "total":0 },
+ "verdict": "BUY | WATCH | REJECT",
+ "confidence": 0,
+ "what_would_change_my_mind": []
+}`;
+
+// One canonical JSON Schema (standard / lowercase) used directly by Workers AI;
+// converted to Gemini's uppercase OpenAPI dialect by toGeminiSchema().
+const THESIS_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    executive_thesis: { type: 'string' },
+    bull_case: { type: 'array', items: { type: 'string' } },
+    bear_case: { type: 'array', items: { type: 'string' } },
+    moat_assessment: { type: 'string' },
+    financial_quality: { type: 'string' },
+    valuation_assessment: { type: 'string' },
+    industry_assessment: { type: 'string' },
+    management_assessment: { type: 'string' },
+    key_risks: { type: 'array', items: { type: 'string' } },
+    key_catalysts: { type: 'array', items: { type: 'string' } },
+    scores: {
+      type: 'object',
+      properties: {
+        growth_runway: { type: 'integer' }, moat: { type: 'integer' }, financial_quality: { type: 'integer' },
+        management_governance: { type: 'integer' }, valuation: { type: 'integer' }, industry_attractiveness: { type: 'integer' },
+        risk_penalty: { type: 'integer' }, total: { type: 'integer' },
+      },
+      required: ['growth_runway', 'moat', 'financial_quality', 'management_governance', 'valuation', 'industry_attractiveness', 'risk_penalty', 'total'],
+    },
+    verdict: { type: 'string', enum: ['BUY', 'WATCH', 'REJECT'] },
+    confidence: { type: 'integer' },
+    what_would_change_my_mind: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['executive_thesis', 'bull_case', 'bear_case', 'moat_assessment', 'financial_quality', 'valuation_assessment',
+    'industry_assessment', 'management_assessment', 'key_risks', 'key_catalysts', 'scores', 'verdict', 'confidence', 'what_would_change_my_mind'],
+};
+
+function toGeminiSchema(s) {
+  if (Array.isArray(s)) return s.map(toGeminiSchema);
+  if (s && typeof s === 'object') {
+    const o = {};
+    for (const k in s) {
+      if (k === 'additionalProperties') continue;               // Gemini rejects this
+      if (k === 'type' && typeof s[k] === 'string') o[k] = s[k].toUpperCase();
+      else o[k] = toGeminiSchema(s[k]);
+    }
+    return o;
+  }
+  return s;
+}
+
+// Provider-abstracted entry point. Default = Google Gemini (best free quality +
+// 1M context); Workers AI is the zero-key fallback. Swap with THESIS_PROVIDER.
+async function runThesis(packet, env) {
+  const provider = String(env.THESIS_PROVIDER || 'gemini').toLowerCase();
+  const userContent = 'Company data packet (use ONLY this):\n```json\n' + JSON.stringify(packet) + '\n```';
+  if (provider === 'gemini') return await runThesisGemini(env, userContent);
+  if (provider === 'workers-ai' || provider === 'workersai' || provider === 'cf') return await runThesisWorkersAI(env, userContent);
+  throw new Error(`unknown THESIS_PROVIDER "${provider}"`);
+}
+
+async function runThesisGemini(env, userContent) {
+  const key = env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY not configured — set it with: wrangler secret put GEMINI_API_KEY');
+  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const webResearch = String(env.THESIS_WEB_RESEARCH ?? 'true').toLowerCase() !== 'false';
+  const u = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+
+  const generationConfig = { temperature: 0.4, maxOutputTokens: 8192 };
+  const reqBody = {
+    systemInstruction: { parts: [{ text: THESIS_SYSTEM_PROMPT }] },
+    contents: [{ role: 'user', parts: [{ text: userContent }] }],
+    generationConfig,
+  };
+  if (webResearch) {
+    // Let the model fill the packet's gaps from the live web. With tools enabled
+    // we enforce JSON via the prompt + safeParseThesis (most model-version-safe),
+    // rather than responseSchema, since some models reject schema+tools together.
+    reqBody.tools = [{ google_search: {} }];
+  } else {
+    generationConfig.responseMimeType = 'application/json';
+    generationConfig.responseSchema = toGeminiSchema(THESIS_JSON_SCHEMA);
+  }
+
+  const r = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(reqBody) });
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error(`Gemini HTTP ${r.status}: ${t.slice(0, 300)}`); }
+  const j = await r.json();
+  const cand = j?.candidates?.[0];
+  const text = (cand?.content?.parts || []).map((p) => p.text || '').join('');
+  if (!text) throw new Error('Gemini returned no content' + (j?.promptFeedback ? ` (${JSON.stringify(j.promptFeedback)})` : ''));
+  const thesis = safeParseThesis(text);
+
+  // Attach grounding citations (the web sources the model used) for transparency.
+  const gm = cand?.groundingMetadata;
+  if (gm) {
+    const sources = (gm.groundingChunks || []).map((c) => c.web ? { title: c.web.title || c.web.uri, uri: c.web.uri } : null).filter(Boolean);
+    const seen = new Set(), uniq = [];
+    for (const s of sources) { if (s.uri && !seen.has(s.uri)) { seen.add(s.uri); uniq.push(s); } }
+    if (uniq.length) thesis._sources = uniq.slice(0, 12);
+    if (gm.webSearchQueries?.length) thesis._search_queries = gm.webSearchQueries;
+  }
+  return thesis;
+}
+
+async function runThesisWorkersAI(env, userContent) {
+  if (!env.AI) throw new Error('no thesis provider configured — set GEMINI_API_KEY, or add the [ai] binding for the Workers AI fallback');
+  const model = env.WORKERS_AI_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+  const res = await env.AI.run(model, {
+    messages: [
+      { role: 'system', content: THESIS_SYSTEM_PROMPT },
+      { role: 'user', content: userContent + '\n\nReturn ONLY valid JSON matching the required schema.' },
+    ],
+    response_format: { type: 'json_schema', json_schema: THESIS_JSON_SCHEMA },
+    max_tokens: 4096,
+  });
+  const out = res && (res.response ?? res);
+  return typeof out === 'string' ? safeParseThesis(out) : out;
+}
+
+function safeParseThesis(text) {
+  let t = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  try { return JSON.parse(t); } catch {}
+  const m = t.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  throw new Error('model did not return valid JSON');
 }
 
 /* ============================ helpers ============================ */
@@ -533,11 +990,32 @@ async function yahooQuote(code) {
 // ending in "&url=") to route Screener fetches through residential/rotating IPs
 // and bypass datacenter blocks. Set per request from env in handleApi.
 let PROXY = '';
+let ENV = null;                    // set per-request in handleApi; read by the helper layer
 async function fetchText(u) {
   const target = PROXY ? PROXY + encodeURIComponent(u) : u;
   const r = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow' });
   if (!r.ok) throw new Error(`Screener returned HTTP ${r.status}`);
   return await r.text();
+}
+
+// ── Data-provider seam (the "finalise how to fetch stock info" hook) ──────────
+// One place that decides WHERE a company's data comes from. Default = Screener
+// (scrape the company page → parseCompany understands that HTML). To finalise a
+// different source later, set DATA_PROVIDER + its key in wrangler/secrets and add
+// a branch returning HTML the parser understands (or refactor parseCompany to
+// accept JSON). Nothing else in the app needs to change.
+async function fetchCompanyRaw(symbol) {
+  const provider = (ENV && ENV.DATA_PROVIDER) || 'screener';
+  if (provider === 'screener') {
+    return await fetchText(`${SCREENER}/company/${encodeURIComponent(symbol)}/consolidated/`);
+  }
+  // Example skeleton for a structured fundamentals API (left as the finalise hook):
+  //   if (provider === 'fmp') {
+  //     const key = ENV.STOCK_API_KEY;
+  //     const r = await fetch(`https://financialmodelingprep.com/api/v3/...&apikey=${key}`);
+  //     return await r.text();   // then adapt parseCompany to read this shape
+  //   }
+  throw new Error(`unknown DATA_PROVIDER "${provider}" — implement its branch in fetchCompanyRaw()`);
 }
 
 function checkAdmin(request, env) {
@@ -570,4 +1048,4 @@ function numOrNull(v) {
 function titleCase(s) { return String(s || '').replace(/\b\w/g, (c) => c.toUpperCase()); }
 
 // Named exports for unit tests (no effect on the Worker runtime — these are pure).
-export { SCREENS, parseScreenTable, parseCompany, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities, BROWSER_HEADERS };
+export { SCREENS, parseScreenTable, parseCompany, parseDataTable, sliceSection, assembleStockData, computeReturns, toGeminiSchema, THESIS_JSON_SCHEMA, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities, BROWSER_HEADERS };
