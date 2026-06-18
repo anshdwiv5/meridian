@@ -19,6 +19,8 @@
 // Routing: /api/* is handled here; everything else is served from /public
 // (configured via run_worker_first = ["/api/*"] in wrangler.toml).
 
+import { handleAllocationRoute } from './allocation-agent.js';
+
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const SCREENER = 'https://www.screener.in';
 // Full browser-like headers — Screener (and many sites) reject bare requests.
@@ -216,6 +218,12 @@ async function handleApi(request, env, url) {
     }
     await db.prepare(`UPDATE stocks SET thesis_json=?, thesis_at=? WHERE symbol=?`).bind(JSON.stringify(thesis), Date.now(), symbol).run();
     return json({ symbol, thesis, cached: false, thesis_at: Date.now(), gaps: r.packet.gaps });
+  }
+
+  // POST /api/allocation  { symbols, monthly_capital?, max_single_pct?, max_sector_pct?, include_watch? }
+  //   -> sizes this month's buy plan across the flagged names, from their cached theses.
+  if (p === '/api/allocation' && request.method === 'POST') {
+    return handleAllocationRoute(request, env, db, json);
   }
 
   // GET /api/chart/:symbol?range=1y&interval=1wk  -> Yahoo history for the in-app chart

@@ -49,6 +49,8 @@ const state = {
   packetCache: {}, thesisCache: {}, thesisLoading: {}, chartRange: '1y',
   // live quote polling
   basePrice: {}, liveTimer: null, liveAt: 0, activeDocs: [],
+  // step 3 (allocation)
+  allocationResult: null, allocLoading: false, monthlyCapital: null,
 };
 
 /* ---------- session persistence (clears on tab close) ---------- */
@@ -332,6 +334,7 @@ function toggleAlloc(symbol, e) {
   if (e) e.stopPropagation();
   const i = state.allocation.indexOf(symbol);
   if (i >= 0) state.allocation.splice(i, 1); else state.allocation.push(symbol);
+  state.allocationResult = null;        // the flagged set changed → any sized plan is stale
   persist(); renderSidebar(); renderBadges();
   toast(i >= 0 ? 'Removed from allocation' : 'Added to allocation');
 }
@@ -860,13 +863,42 @@ function thesisView(t) {
 }
 
 /* ============================ STEP 3 · ALLOCATION ============================ */
+// Sizes this month's buy plan across the flagged names using the cached agent
+// theses (server-side: POST /api/allocation). Runs on a button, like the thesis,
+// so it never burns free-tier quota automatically.
 function renderAllocation() {
   const mount = $('#allocMount');
   if (!state.allocation.length) {
     mount.innerHTML = `<div class="empty big"><h3>No stocks flagged for allocation</h3><p>In <b>Research</b>, hit the ☆ next to a name to add it here.</p></div>`;
     return;
   }
-  mount.innerHTML = `<div class="alloc-grid">${state.allocation.map((sym) => {
+  const cap = state.monthlyCapital;
+  const res = state.allocationResult;
+  const btnLabel = (res && res.plan) ? 'Regenerate plan' : 'Generate allocation';
+  const control = `<div class="alloc-bar" style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px">
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label style="font-size:12px;color:var(--muted)">Monthly capital (optional)</label>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--surface);box-shadow:var(--nm-in-sm);border-radius:var(--r);padding:9px 12px">
+        <span style="color:var(--muted)">₹</span>
+        <input id="allocCapital" type="text" inputmode="numeric" placeholder="e.g. 50000" value="${cap ? esc(String(cap)) : ''}" style="border:0;background:transparent;outline:none;font:inherit;width:120px;color:inherit" onkeydown="if(event.key==='Enter')generateAllocation()">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="generateAllocation()">${I.spark} ${btnLabel}</button>
+  </div>`;
+  let body;
+  if (state.allocLoading) body = `<div class="loading"><span class="spinner"></span> Sizing your monthly buy plan from the agent theses…</div>`;
+  else if (res && res.keyError) body = keyNote(res.keyError);
+  else if (res && res.error) body = `${apiError('Allocation failed', res.error)}${missingNote(res.missing)}`;
+  else if (res && res.plan) body = allocationView(res.plan, res.monthly_capital, res.missing);
+  else body = flaggedPreview();
+  mount.innerHTML = control + body;
+}
+
+// Pre-generation view: the flagged names as cards, plus a hint to size them.
+function flaggedPreview() {
+  const haveThesis = state.allocation.filter((s) => state.thesisCache[s]).length;
+  const hint = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${state.allocation.length} name${state.allocation.length === 1 ? '' : 's'} flagged${haveThesis < state.allocation.length ? ` · generate a thesis for any without one in Research first` : ''}. Set your monthly amount and hit <b>Generate allocation</b> for a tiered buy plan.</div>`;
+  const grid = `<div class="alloc-grid">${state.allocation.map((sym) => {
     const meta = state.researchList.find((x) => x.symbol === sym) || { symbol: sym, company: sym };
     const pk = state.packetCache[sym]?.packet, t = state.thesisCache[sym];
     const v = t ? String(t.verdict || '').toUpperCase() : '';
@@ -882,6 +914,83 @@ function renderAllocation() {
       <span class="rm" onclick="toggleAlloc('${esc(sym)}')">remove</span>
     </div>`;
   }).join('')}</div>`;
+  return hint + grid;
+}
+
+async function generateAllocation() {
+  if (!state.allocation.length) return;
+  const capEl = $('#allocCapital');
+  const cap = capEl ? Number(String(capEl.value).replace(/[,\s₹]/g, '')) : NaN;
+  state.monthlyCapital = (Number.isFinite(cap) && cap > 0) ? cap : null;
+  state.allocLoading = true; renderAllocation();
+  try {
+    const body = { symbols: state.allocation };
+    if (state.monthlyCapital) body.monthly_capital = state.monthlyCapital;
+    const r = await fetch(`${API}/api/allocation`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await r.json();
+    state.allocLoading = false;
+    if (data.needsKey) state.allocationResult = { keyError: data.error };
+    else if (!data.allocation) state.allocationResult = { error: data.error || 'no result', missing: data.missing || [] };
+    else state.allocationResult = { plan: data.allocation, missing: data.missing || [], monthly_capital: data.monthly_capital };
+  } catch (e) {
+    state.allocLoading = false;
+    state.allocationResult = { error: e.message };
+  }
+  renderAllocation();
+}
+
+function missingNote(missing) {
+  if (!missing || !missing.length) return '';
+  return `<div style="background:var(--warn-soft);border-radius:var(--r);padding:12px 14px;margin-top:14px;font-size:13px;color:var(--warn)">
+    <b>No thesis yet:</b> ${missing.map(esc).join(', ')}. Generate a thesis for these in <b>Research</b>, then regenerate.</div>`;
+}
+
+function allocationView(plan, cap, missing) {
+  const ps = plan.portfolio_summary || {};
+  const rows = (plan.allocations || []).slice();
+  const nameOf = (tk) => (state.researchList.find((x) => x.symbol === tk) || {}).company || tk;
+  const rupee = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const funded = rows.filter((a) => a.target_weight_pct > 0).sort((a, b) => b.target_weight_pct - a.target_weight_pct);
+  const avoided = rows.filter((a) => !(a.target_weight_pct > 0));
+  const tierColor = { A: 'var(--pos)', B: 'var(--accent-deep)', C: 'var(--warn)' };
+  const actBg = (x) => (x === 'BUY' || x === 'ADD') ? 'var(--pos-soft);color:var(--pos)' : (x === 'TRIM') ? 'var(--neg-soft);color:var(--neg)' : (x === 'HOLD') ? 'var(--warn-soft);color:var(--warn)' : 'var(--neg-soft);color:var(--neg)';
+
+  const card = (a, dim) => {
+    const w = a.target_weight_pct;
+    const amtVal = (a.target_amount != null) ? a.target_amount : (cap ? Math.round(w / 100 * cap) : null);
+    const amt = (amtVal != null) ? `<span style="color:var(--muted);font-weight:600;font-size:13px;margin-left:9px">${rupee(amtVal)}</span>` : '';
+    return `<div style="background:var(--surface);box-shadow:var(--nm-out-sm);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;${dim ? 'opacity:.6' : ''}">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-family:var(--font-display);font-size:15px">${esc(nameOf(a.ticker))}</b>
+        <span style="color:var(--muted);font-size:12.5px">${esc(a.ticker)}</span>
+        <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center">
+          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;box-shadow:var(--nm-in-sm);color:${tierColor[a.tier] || 'var(--muted)'}">Tier ${esc(a.tier)}</span>
+          <span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:${actBg(a.action)}">${esc(a.action)}</span>
+        </span>
+      </div>
+      ${w > 0 ? `<div style="display:flex;align-items:center;gap:10px;margin:9px 0 7px">
+        <div style="font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--accent-deep);min-width:62px">${w}%</div>${amt}
+        <div style="flex:1;height:7px;border-radius:999px;box-shadow:var(--nm-in-sm);overflow:hidden"><div style="height:100%;width:${Math.min(100, w)}%;background:var(--accent-deep)"></div></div>
+      </div>` : ''}
+      <div style="font-size:13px;line-height:1.5">${(a.justification || []).map((j) => esc(j)).join('<br>') || '—'}</div>
+    </div>`;
+  };
+
+  const sumW = Math.round(funded.reduce((t, a) => t + a.target_weight_pct, 0));
+  const head = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;margin:2px 0 14px">
+    <div style="font-family:var(--font-display);font-size:18px;font-weight:800">Monthly buy plan</div>
+    <div style="color:var(--muted);font-size:13px">${funded.length} position${funded.length === 1 ? '' : 's'} · ${sumW}% of new capital${cap ? ` · ${rupee(cap)} total` : ''}</div>
+  </div>`;
+  const summary = (ps.overall_style || ps.risk_posture || ps.concentration_notes) ? `<div style="background:var(--surface);box-shadow:var(--nm-in-sm);border-radius:var(--r);padding:13px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.6">
+    ${ps.overall_style ? `<div><b>Style:</b> ${esc(ps.overall_style)}</div>` : ''}
+    ${ps.risk_posture ? `<div><b>Risk:</b> ${esc(ps.risk_posture)}</div>` : ''}
+    ${ps.concentration_notes ? `<div><b>Concentration:</b> ${esc(ps.concentration_notes)}</div>` : ''}
+  </div>` : '';
+  const avoidBlock = avoided.length ? `<div style="margin-top:6px"><div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 9px">Skipped this month</div>${avoided.map((a) => card(a, true)).join('')}</div>` : '';
+  const cons = (plan.constraints_applied && plan.constraints_applied.length) ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${plan.constraints_applied.map((c) => `<span style="font-size:11px;color:var(--muted);padding:3px 9px;border-radius:999px;box-shadow:var(--nm-in-sm)">${esc(c)}</span>`).join('')}</div>` : '';
+  const notes = plan.final_notes ? `<div style="margin-top:12px;padding:12px 14px;border-radius:var(--r);box-shadow:var(--nm-in-sm);font-size:13px;color:var(--muted);line-height:1.55">${esc(plan.final_notes)}</div>` : '';
+  const basis = `<div style="margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.5">Percentages are of this month’s fresh capital${cap ? '' : ' — enter a monthly amount above to see rupee buys'}. Caps: single ≤ 25%, sector ≤ 35%. Decision support, not advice.</div>`;
+  return head + summary + missingNote(missing) + funded.map((a) => card(a, false)).join('') + avoidBlock + cons + notes + basis;
 }
 
 /* ============================ CHROME ============================ */
@@ -974,7 +1083,7 @@ const INFO = {
   howto: { title: 'How to use Meridian', body: `
     <h4>1 · Shortlist</h4><p>Pick screens, set a depth, take the intersection. Hit <b>Research</b> on the survivors you want to study.</p>
     <h4>2 · Research</h4><p>Pick a stock on the left. <b>Stock Data</b> shows six buckets of fundamentals with live prices; <b>Agent Thesis</b> generates a structured 10–15-year verdict on demand. Tap the ☆ to flag a name for allocation.</p>
-    <h4>3 · Allocation</h4><p>Your flagged names gather here. Sizing &amp; the monthly buy plan come later.</p>
+    <h4>3 · Allocation</h4><p>Your flagged names gather here. Enter your monthly amount (optional) and hit <b>Generate allocation</b> — the agent sizes a tiered buy plan from the theses, capped so no single name or sector dominates.</p>
     <p class="muted">Everything resets when you close the tab — Meridian is a once-a-month, use-and-close tool.</p>` },
   terms: { title: 'Terms & Disclaimer', body: `
     <p><b>Meridian is a personal research tool, not financial advice.</b> It is built by Ansh Dwivedi for his own use and shared with friends &amp; family. Nothing here is a recommendation to buy, sell, or hold any security.</p>
