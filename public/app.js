@@ -1,4 +1,4 @@
-/* Meridian — frontend (classic script; inline handlers call these globals).
+/* Meridian, frontend (classic script; inline handlers call these globals).
    Three steps: 1) Shortlist (screens → intersection), 2) Research (per-stock data
    + AI thesis), 3) Allocation (shell). All working state is session-only: kept in
    memory, mirrored to sessionStorage so a reload inside the tab is safe, and gone
@@ -16,7 +16,7 @@ const LENS = {
   balance:  {c:'#c98a12', label:'Balance sheet'},
 };
 
-// Icons — one consistent set (Lucide, MIT). 24px grid, 2px stroke, round joins,
+// Icons, one consistent set (Lucide, MIT). 24px grid, 2px stroke, round joins,
 // inlined so the PWA stays offline-capable. Same keys as before, so every call
 // site updates at once. Sized by their container's `svg` CSS rule.
 const LU = (p, w = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
@@ -78,10 +78,15 @@ function restore() {
 
 /* ---------- formatting ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const num = (v, suf = '') => (v === null || v === undefined || v === '' || (typeof v === 'number' && !isFinite(v))) ? '—' : (v + suf);
-const n2 = (v) => v == null || !isFinite(v) ? '—' : (Math.round(v * 100) / 100).toLocaleString('en-IN');
-function cr(v) { if (v == null || !isFinite(v)) return '—'; return v >= 100000 ? '₹' + (v / 100000).toFixed(2) + 'L cr' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' cr'; }
-function inr(v) { return v == null || !isFinite(v) ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+// Agent text can carry light markdown (**bold**). Escape first (no HTML injection),
+// then promote **x** to real bold so users never see literal asterisks. Also drops a
+// stray leading "; " / bullet the model sometimes prepends.
+const mdBold = (s) => esc(String(s ?? '').replace(/^\s*[;:*-]\s+/, '')).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+const has = (v) => v != null && v !== '' && !(typeof v === 'number' && !isFinite(v));
+const num = (v, suf = '') => (v === null || v === undefined || v === '' || (typeof v === 'number' && !isFinite(v))) ? '-' : (v + suf);
+const n2 = (v) => v == null || !isFinite(v) ? '-' : (Math.round(v * 100) / 100).toLocaleString('en-IN');
+function cr(v) { if (v == null || !isFinite(v)) return '-'; return v >= 100000 ? '₹' + (v / 100000).toFixed(2) + 'L cr' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' cr'; }
+function inr(v) { return v == null || !isFinite(v) ? '-' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
 function abbr(v) { if (v == null || !isFinite(v)) return ''; const a = Math.abs(v); if (a >= 100000) return (v / 100000).toFixed(1) + 'L'; if (a >= 1000) return (v / 1000).toFixed(1) + 'k'; return Math.round(v).toString(); }
 function ago(ms) { if (!ms) return 'never'; const s = (Date.now() - ms) / 1000; if (s < 90) return 'just now'; const m = s / 60; if (m < 90) return Math.round(m) + 'm ago'; const h = m / 60; if (h < 36) return Math.round(h) + 'h ago'; return Math.round(h / 24) + 'd ago'; }
 
@@ -393,7 +398,7 @@ function renderHead(d) {
     const chg = live.prevClose != null ? (live.price / live.prevClose - 1) * 100 : null;
     price = `<div class="sd-pricewrap">
       <div class="sd-price" id="livePrice">${inr(live.price)}</div>
-      <div class="sd-chg ${chg == null ? '' : (chg >= 0 ? 'up' : 'down')}" id="liveChg">${chg == null ? '—' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%')}</div>
+      <div class="sd-chg ${chg == null ? '' : (chg >= 0 ? 'up' : 'down')}" id="liveChg">${chg == null ? '-' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%')}</div>
       <span class="livetag"><span class="livedot"></span><span id="liveAgo">live</span></span></div>`;
   } else if (st.price) price = `<div class="sd-pricewrap"><div class="sd-price" id="livePrice">${inr(st.price)}</div><div class="sd-chg" id="liveChg">last close</div></div>`;
   $('#rsHead').innerHTML = `<div class="sd-name">${esc(st.company)}</div>
@@ -422,24 +427,27 @@ function lv(base, fmt, dir) { return (base == null || !isFinite(base)) ? '' : `d
 function bucketProfile(p) {
   const a = p.profile;
   const owners = [['Promoter', a.promoter_pct], ['FII', a.fii_pct], ['DII', a.dii_pct], ['Public', a.public_pct]];
-  const ownerRows = owners.map(([k, v]) => `<dt>${k}</dt><dd>${num(v, '%')}</dd>`).join('') + (a.pledge_pct != null ? `<dt>Promoter pledge</dt><dd class="${a.pledge_pct > 0 ? 'down' : ''}">${num(a.pledge_pct, '%')}</dd>` : '');
+  const ownerRows = owners.filter(([, v]) => has(v)).map(([k, v]) => `<dt>${k}</dt><dd>${num(v, '%')}</dd>`).join('')
+    + (has(a.pledge_pct) ? `<dt>Promoter pledge</dt><dd class="${a.pledge_pct > 0 ? 'down' : ''}">${num(a.pledge_pct, '%')}</dd>` : '');
   const ownerBar = ownerStack(owners);
+  // Only render rows that actually have a value, so the panel never shows blank fields.
+  const biz = [
+    ['Ticker', `${esc(a.symbol)}${a.exchange ? ' · ' + esc(a.exchange) : ''}`],
+    ['Sector', has(a.sector) ? esc(a.sector) : null],
+    ['Market cap', has(a.market_cap_cr) ? `<span ${lv(a.market_cap_cr, 'cr')}>${cr(a.market_cap_cr)}</span>` : null],
+    ['Shares out.', has(a.shares_outstanding_cr) ? n2(a.shares_outstanding_cr) + ' cr' : null],
+    ['Book value', has(a.book_value) ? inr(a.book_value) : null],
+    ['Face value', has(a.face_value) ? inr(a.face_value) : null],
+  ].filter(([, v]) => v != null).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
   return `<div class="bucket">${bH('A', 'Company profile')}
     <div class="twocol">
       <div class="panel"><h4>Business</h4>
-        <dl class="kv">
-          <dt>Ticker</dt><dd>${esc(a.symbol)} · ${esc(a.exchange || '—')}</dd>
-          <dt>Sector</dt><dd>${esc(a.sector || '—')}</dd>
-          <dt>Market cap</dt><dd ${lv(a.market_cap_cr, 'cr')}>${cr(a.market_cap_cr)}</dd>
-          <dt>Shares out.</dt><dd>${a.shares_outstanding_cr != null ? n2(a.shares_outstanding_cr) + ' cr' : '—'}</dd>
-          <dt>Book value</dt><dd>${inr(a.book_value)}</dd>
-          <dt>Face value</dt><dd>${inr(a.face_value)}</dd>
-        </dl>
+        <dl class="kv">${biz}</dl>
         ${a.about ? `<p class="about" style="margin-top:12px">${esc(a.about)}</p>` : ''}
       </div>
       <div class="panel"><h4>Ownership</h4>
         ${ownerBar}
-        <dl class="kv" style="margin-top:14px">${ownerRows}</dl>
+        ${ownerRows ? `<dl class="kv" style="margin-top:14px">${ownerRows}</dl>` : ''}
       </div>
     </div></div>`;
 }
@@ -472,7 +480,7 @@ function bucketFinancials(p) {
 
   const tables = ['pnl', 'balance_sheet', 'cash_flow'].map((k) => finTable(k === 'pnl' ? 'Profit & Loss' : k === 'balance_sheet' ? 'Balance Sheet' : 'Cash Flow', p.financials.annual[k]))
     .concat([finTable('Quarterly Results', p.financials.quarterly)]).filter(Boolean).join('');
-  const chartsHtml = charts.length ? `<div class="chgrid2">${charts.join('')}</div>` : `<div class="gapnote">Financial statement tables weren’t captured from Screener for this name — try Refresh on the stock, or check the Screener link.</div>`;
+  const chartsHtml = charts.length ? `<div class="chgrid2">${charts.join('')}</div>` : `<div class="gapnote">Financial statement tables weren’t captured from Screener for this name, try Refresh on the stock, or check the Screener link.</div>`;
   return `<div class="bucket">${bH('B', 'Historical financials')}${chartsHtml}${tables}</div>`;
 }
 function finTable(title, t) {
@@ -484,39 +492,43 @@ function finTable(title, t) {
 
 function bucketQuality(p) {
   const q = p.quality;
+  const C = (raw, html) => (has(raw) ? html : '');     // drop a KPI card when its value is missing
   const cards = [
-    kpi('ROCE', num(q.roce_pct, '%'), 'return on capital'),
-    kpi('ROE', num(q.roe_pct, '%'), 'return on equity'),
-    kpi('ROA', num(q.roa_pct, '%'), 'return on assets'),
-    kpi('Asset turnover', num(q.asset_turnover, '×'), 'sales / assets'),
-    kpi('Interest cover', num(q.interest_coverage, '×'), 'EBIT / interest'),
-    kpi('Debt / Equity', num(q.debt_to_equity), q.debt_to_equity == null ? '' : (q.debt_to_equity < 0.3 ? 'low' : q.debt_to_equity < 1 ? 'moderate' : 'high')),
-    kpi('Debt / EBITDA', num(q.debt_to_ebitda, '×'), 'leverage'),
-    kpi('FCF yield', num(q.fcf_yield_pct, '%'), 'FCF / mcap'),
-    kpi('CFO / PAT', num(q.cfo_to_pat, '×'), 'earnings quality'),
-    kpi('Revenue CAGR', num(q.revenue_cagr_pct, '%'), 'long-run'),
-    kpi('PAT CAGR', num(q.pat_cagr_pct, '%'), 'long-run'),
-    kpi('Cash cycle', num(q.cash_conversion_cycle), 'days'),
-  ].join('');
-  const wc = [['Debtor', q.debtor_days], ['Inventory', q.inventory_days], ['Payable', q.payable_days], ['CCC', q.cash_conversion_cycle]].filter(([, v]) => v != null);
+    C(q.roce_pct, kpi('ROCE', num(q.roce_pct, '%'), 'return on capital')),
+    C(q.roe_pct, kpi('ROE', num(q.roe_pct, '%'), 'return on equity')),
+    C(q.roa_pct, kpi('ROA', num(q.roa_pct, '%'), 'return on assets')),
+    C(q.asset_turnover, kpi('Asset turnover', num(q.asset_turnover, '×'), 'sales / assets')),
+    C(q.interest_coverage, kpi('Interest cover', num(q.interest_coverage, '×'), 'EBIT / interest')),
+    C(q.debt_to_equity, kpi('Debt / Equity', num(q.debt_to_equity), q.debt_to_equity == null ? '' : (q.debt_to_equity < 0.3 ? 'low' : q.debt_to_equity < 1 ? 'moderate' : 'high'))),
+    C(q.debt_to_ebitda, kpi('Debt / EBITDA', num(q.debt_to_ebitda, '×'), 'leverage')),
+    C(q.fcf_yield_pct, kpi('FCF yield', num(q.fcf_yield_pct, '%'), 'FCF / mcap')),
+    C(q.cfo_to_pat, kpi('CFO / PAT', num(q.cfo_to_pat, '×'), 'earnings quality')),
+    C(q.revenue_cagr_pct, kpi('Revenue CAGR', num(q.revenue_cagr_pct, '%'), 'long-run')),
+    C(q.pat_cagr_pct, kpi('PAT CAGR', num(q.pat_cagr_pct, '%'), 'long-run')),
+    C(q.cash_conversion_cycle, kpi('Cash cycle', num(q.cash_conversion_cycle), 'days')),
+  ].filter(Boolean).join('');
+  const wc = [['Debtor', q.debtor_days], ['Inventory', q.inventory_days], ['Payable', q.payable_days], ['CCC', q.cash_conversion_cycle]].filter(([, v]) => has(v));
   const wcChart = q.roce_trend?.length ? chartCard('ROCE trend (%)', linesSVG(alignSeries([{ name: 'ROCE', color: 'var(--accent)', points: q.roce_trend }]), { pct: true })) : '';
   const wcCards = wc.length ? `<div class="chartcard"><h4>Working-capital cycle (days)</h4>${barsSVG(wc.map(([p2, v]) => ({ p: p2, v })), { color: 'var(--accent)', labelEach: true })}</div>` : '';
   const second = (wcChart || wcCards) ? `<div class="chgrid2" style="margin-top:14px">${wcChart}${wcCards}</div>` : '';
-  return `<div class="bucket">${bH('C', 'Efficiency & quality')}<div class="cardgrid c4">${cards}</div>${second}</div>`;
+  if (!cards && !second) return '';                    // no efficiency data at all, drop the whole block
+  const grid = cards ? `<div class="cardgrid c4">${cards}</div>` : '';
+  return `<div class="bucket">${bH('C', 'Efficiency & quality')}${grid}${second}</div>`;
 }
 
 function bucketValuation(p, sym) {
   const v = p.valuation;
+  const C = (raw, html) => (has(raw) ? html : '');     // drop a KPI card when its value is missing
   const cards = [
-    kpi('P/E', num(v.pe), 'price / earnings', '', lv(v.pe, 'num')),
-    kpi('P/B', num(v.pb), 'price / book', '', lv(v.pb, 'num')),
-    kpi('EV/EBITDA', num(v.ev_ebitda, '×'), '', '', lv(v.ev_ebitda, 'x')),
-    kpi('EV/Sales', num(v.ev_sales, '×'), '', '', lv(v.ev_sales, 'x')),
-    kpi('P/FCF', num(v.p_fcf, '×'), '', '', lv(v.p_fcf, 'x')),
-    kpi('Div yield', num(v.dividend_yield_pct, '%'), 'trailing', '', lv(v.dividend_yield_pct, 'pct', 'div')),
-    kpi('52w high', inr(v.high_52w), '', '', 'data-live="q_high" data-fmt="inr"'),
-    kpi('52w low', inr(v.low_52w), '', '', 'data-live="q_low" data-fmt="inr"'),
-  ].join('');
+    C(v.pe, kpi('P/E', num(v.pe), 'price / earnings', '', lv(v.pe, 'num'))),
+    C(v.pb, kpi('P/B', num(v.pb), 'price / book', '', lv(v.pb, 'num'))),
+    C(v.ev_ebitda, kpi('EV/EBITDA', num(v.ev_ebitda, '×'), '', '', lv(v.ev_ebitda, 'x'))),
+    C(v.ev_sales, kpi('EV/Sales', num(v.ev_sales, '×'), '', '', lv(v.ev_sales, 'x'))),
+    C(v.p_fcf, kpi('P/FCF', num(v.p_fcf, '×'), '', '', lv(v.p_fcf, 'x'))),
+    C(v.dividend_yield_pct, kpi('Div yield', num(v.dividend_yield_pct, '%'), 'trailing', '', lv(v.dividend_yield_pct, 'pct', 'div'))),
+    C(v.high_52w, kpi('52w high', inr(v.high_52w), '', '', 'data-live="q_high" data-fmt="inr"')),
+    C(v.low_52w, kpi('52w low', inr(v.low_52w), '', '', 'data-live="q_low" data-fmt="inr"')),
+  ].filter(Boolean).join('');
   const ret = v.returns || {};
   const order = [['1m', '1m'], ['3m', '3m'], ['6m', '6m'], ['1y', '1y'], ['3y', '3y'], ['5y', '5y']];
   const heat = order.filter(([k]) => ret[k] != null).map(([k, lab]) => { const val = ret[k]; const cls = val >= 0 ? 'pos' : 'neg'; return `<div class="ret ${cls}"><div class="rk">${lab}</div><div class="rv">${(val >= 0 ? '+' : '') + val}%</div></div>`; }).join('');
@@ -526,7 +538,8 @@ function bucketValuation(p, sym) {
         <div class="rangebtns">${['6mo', '1y', '5y'].map((r) => `<button class="${state.chartRange === r ? 'on' : ''}" onclick="setChartRange('${r}')">${r.toUpperCase()}</button>`).join('')}</div></div>
       <div id="nativeChart"><div class="loading"><span class="spinner"></span> Loading price history…</div></div></div>`;
   const peers = peersTable(v.peers, sym);
-  return `<div class="bucket">${bH('D', 'Valuation & market')}<div class="cardgrid c4">${cards}</div>${heatHtml}${price}${peers ? `<div class="panel" style="margin-top:14px"><h4>Peer comparison (Screener)</h4>${peers}</div>` : ''}</div>`;
+  const cardgrid = cards ? `<div class="cardgrid c4">${cards}</div>` : '';
+  return `<div class="bucket">${bH('D', 'Valuation & market')}${cardgrid}${heatHtml}${price}${peers ? `<div class="panel" style="margin-top:14px"><h4>Peer comparison (Screener)</h4>${peers}</div>` : ''}</div>`;
 }
 function peersTable(peers, sym) {
   if (!peers || !peers.rows?.length) return '';
@@ -537,9 +550,9 @@ function peersTable(peers, sym) {
 function bucketIndustry(p) {
   const peers = peersTable(p.industry.peers, p.profile.symbol);
   return `<div class="bucket">${bH('E', 'Industry & competition')}
-    <div class="panel"><dl class="kv"><dt>Sector</dt><dd>${esc(p.industry.sector || '—')}</dd></dl>
+    <div class="panel"><dl class="kv"><dt>Sector</dt><dd>${esc(p.industry.sector || '-')}</dd></dl>
       ${peers ? `<div style="margin-top:12px">${peers}</div>` : ''}
-      <div class="gapnote"><b>Industry size, growth, market share &amp; regulation</b> aren’t in free structured sources — the <b>Agent Thesis</b> researches these live from the web and cites its sources.</div>
+      <div class="gapnote"><b>Industry size, growth, market share &amp; regulation</b> aren’t in free structured sources, the <b>Agent Thesis</b> researches these live from the web and cites its sources.</div>
     </div></div>`;
 }
 
@@ -548,13 +561,13 @@ function bucketGovernance(p) {
   const sh = g.shareholding_trend;
   const trend = sh && sh.columns?.length ? finTableOpen('Shareholding trend (%)', sh) : '';
   const flags = (g.pros?.length || g.cons?.length) ? `<div class="twocol" style="margin-top:14px">
-      <div class="panel"><h4>What’s working (Screener)</h4><div class="flags">${(g.pros || []).map((x) => `<div class="flag ok"><div class="ic">✓</div><div>${esc(x)}</div></div>`).join('') || '<p class="about">—</p>'}</div></div>
-      <div class="panel"><h4>Watch-outs (Screener)</h4><div class="flags">${(g.cons || []).map((x) => `<div class="flag watch"><div class="ic">!</div><div>${esc(x)}</div></div>`).join('') || '<p class="about">—</p>'}</div></div>
+      <div class="panel"><h4>What’s working (Screener)</h4><div class="flags">${(g.pros || []).map((x) => `<div class="flag ok"><div class="ic">✓</div><div>${esc(x)}</div></div>`).join('') || '<p class="about">-</p>'}</div></div>
+      <div class="panel"><h4>Watch-outs (Screener)</h4><div class="flags">${(g.cons || []).map((x) => `<div class="flag watch"><div class="ic">!</div><div>${esc(x)}</div></div>`).join('') || '<p class="about">-</p>'}</div></div>
     </div>` : '';
   const docHtml = renderDocsSection(g.documents);
   return `<div class="bucket">${bH('F', 'Management, governance & events')}
     ${trend}${flags}${docHtml}
-    <div class="gapnote"><b>Board/auditor changes, related-party flags, litigation &amp; recent news</b> aren’t fetched here — the <b>Agent Thesis</b> researches material events live and flags governance risks.</div>
+    <div class="gapnote"><b>Board/auditor changes, related-party flags, litigation &amp; recent news</b> aren’t fetched here, the <b>Agent Thesis</b> researches material events live and flags governance risks.</div>
   </div>`;
 }
 function finTableOpen(title, t) {
@@ -614,7 +627,7 @@ function docCard(d, idx) {
   const fmt = d.isPdf ? 'PDF' : 'WEB';
   const src = d.source ? `<span class="doc-src">${esc(String(d.source).toUpperCase())}</span>` : '';
   const date = d.date ? `<span class="doc-date">${esc(d.date)}</span>` : '';
-  return `<button class="doccard" onclick="openDoc(${idx})" title="${esc(d.title)} — opens in a new tab">
+  return `<button class="doccard" onclick="openDoc(${idx})" title="${esc(d.title)}, opens in a new tab">
     <div class="doc-thumb ${cls}">${I.doc}<span class="doc-fmt">${fmt}</span></div>
     <div class="doc-meta">
       <div class="doc-title">${esc(d.title)}</div>
@@ -648,7 +661,7 @@ function iWrap(svg, w, h, cols, fmt) {
   return `<div class="chartwrap" data-chart="${data}">${svg}<div class="cx"></div><div class="cdots"></div><div class="ctip"></div></div>`;
 }
 function fmtVal(v, fmt) {
-  if (v == null || !isFinite(v)) return '—';
+  if (v == null || !isFinite(v)) return '-';
   if (fmt === 'inr') return inr(v);
   if (fmt === 'cr') return '₹' + n2(v) + ' cr';
   if (fmt === 'pct') return n2(v) + '%';
@@ -831,20 +844,20 @@ function thesisView(t) {
     ['Growth runway', sc.growth_runway, 5], ['Moat', sc.moat, 5], ['Financial quality', sc.financial_quality, 5],
     ['Management / governance', sc.management_governance, 5], ['Valuation', sc.valuation, 5], ['Industry', sc.industry_attractiveness, 5],
     ['Risk penalty', sc.risk_penalty, 5, true],
-  ].map(([k, v, max, pen]) => `<div class="scorebar"><div class="sk">${k}</div><div class="st"><div class="sf ${pen ? 'pen' : ''}" style="width:${Math.max(0, Math.min(1, (v || 0) / max)) * 100}%"></div></div><div class="sv">${pen ? '−' : ''}${v ?? '—'}</div></div>`).join('');
-  const list = (arr) => `<ul class="bblist">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join('') || '<li>—</li>'}</ul>`;
-  const ass = (lab, body) => body ? `<div class="asscard"><div class="at">${lab}</div><div class="ab">${esc(body)}</div></div>` : '';
-  const rc = (arr) => `<div class="rclist">${(arr || []).map((x) => `<div class="rcitem">${esc(x)}</div>`).join('') || '<div class="rcitem">—</div>'}</div>`;
+  ].map(([k, v, max, pen]) => `<div class="scorebar"><div class="sk">${k}</div><div class="st"><div class="sf ${pen ? 'pen' : ''}" style="width:${Math.max(0, Math.min(1, (v || 0) / max)) * 100}%"></div></div><div class="sv">${pen ? '−' : ''}${v ?? '-'}</div></div>`).join('');
+  const list = (arr) => `<ul class="bblist">${(arr || []).map((x) => `<li>${mdBold(x)}</li>`).join('') || '<li>Not available.</li>'}</ul>`;
+  const ass = (lab, body) => body ? `<div class="asscard"><div class="at">${lab}</div><div class="ab">${mdBold(body)}</div></div>` : '';
+  const rc = (arr) => `<div class="rclist">${(arr || []).map((x) => `<div class="rcitem">${mdBold(x)}</div>`).join('') || '<div class="rcitem">Not available.</div>'}</div>`;
   const sources = (t._sources || []).length ? `<div class="sources"><h4>Researched from the web</h4><div class="srcchips">${t._sources.map((s) => `<a class="srcchip" href="${esc(s.uri)}" target="_blank" rel="noopener">${esc((s.title || s.uri).slice(0, 60))}</a>`).join('')}</div></div>` : '';
   return `
   <div class="verdictbar">
     <div class="verdict ${vcls}">${esc(verdict)}</div>
-    <div class="vmeta"><div class="total">Score <b>${sc.total ?? '—'}</b> / 30</div><div class="conf">Confidence ${conf}/100</div></div>
+    <div class="vmeta"><div class="total">Score <b>${sc.total ?? '-'}</b> / 30</div><div class="conf">Confidence ${conf}/100</div></div>
     <div class="confbar"><div class="lab">Confidence</div><div class="track"><div class="fill" style="width:${conf}%"></div></div></div>
     <button class="btn btn-ghost btn-sm" onclick="generateThesis(true)">${I.refresh} Regenerate</button>
   </div>
   <div class="scoregrid">${scoreRows}</div>
-  <div class="th-exec">${esc(t.executive_thesis || '')}</div>
+  <div class="th-exec">${mdBold(t.executive_thesis || '')}</div>
   <div class="bbgrid">
     <div class="bbcard bull"><h4>${I.spark} Bull case</h4>${list(t.bull_case)}</div>
     <div class="bbcard bear"><h4>Bear case</h4>${list(t.bear_case)}</div>
@@ -886,7 +899,7 @@ function renderAllocation() {
     <button class="btn btn-primary" onclick="generateAllocation()">${I.spark} ${btnLabel}</button>
   </div>`;
   let body;
-  if (state.allocLoading) body = `<div class="loading"><span class="spinner"></span> Sizing your monthly buy plan from the agent theses…</div>`;
+  if (state.allocLoading) body = `<div class="loading"><span class="spinner"></span> Sizing your allocation plan. Any flagged name without a thesis is researched first, so this can take a moment.</div>`;
   else if (res && res.keyError) body = keyNote(res.keyError);
   else if (res && res.error) body = `${apiError('Allocation failed', res.error)}${missingNote(res.missing)}`;
   else if (res && res.plan) body = allocationView(res.plan, res.monthly_capital, res.missing);
@@ -896,8 +909,7 @@ function renderAllocation() {
 
 // Pre-generation view: the flagged names as cards, plus a hint to size them.
 function flaggedPreview() {
-  const haveThesis = state.allocation.filter((s) => state.thesisCache[s]).length;
-  const hint = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${state.allocation.length} name${state.allocation.length === 1 ? '' : 's'} flagged${haveThesis < state.allocation.length ? ` · generate a thesis for any without one in Research first` : ''}. Set your monthly amount and hit <b>Generate allocation</b> for a tiered buy plan.</div>`;
+  const hint = `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">${state.allocation.length} name${state.allocation.length === 1 ? '' : 's'} flagged. Set your monthly amount and hit <b>Generate allocation</b> for a conviction-weighted plan. Any name without a thesis yet is researched automatically.</div>`;
   const grid = `<div class="alloc-grid">${state.allocation.map((sym) => {
     const meta = state.researchList.find((x) => x.symbol === sym) || { symbol: sym, company: sym };
     const pk = state.packetCache[sym]?.packet, t = state.thesisCache[sym];
@@ -909,7 +921,7 @@ function flaggedPreview() {
       <div class="nm">${esc(meta.company)}</div><div class="sub">${esc(sym)}${meta.sector ? ' · ' + esc(meta.sector) : ''}</div>
       <div class="mini">
         <div>ROCE<b>${num(q?.roce_pct, '%')}</b></div><div>P/E<b>${num(val?.pe)}</b></div>
-        <div>D/E<b>${num(q?.debt_to_equity)}</b></div><div>M-cap<b>${pk ? abbr(pk.profile.market_cap_cr) : '—'}</b></div>
+        <div>D/E<b>${num(q?.debt_to_equity)}</b></div><div>M-cap<b>${pk ? abbr(pk.profile.market_cap_cr) : '-'}</b></div>
       </div>
       <span class="rm" onclick="toggleAlloc('${esc(sym)}')">remove</span>
     </div>`;
@@ -942,7 +954,7 @@ async function generateAllocation() {
 function missingNote(missing) {
   if (!missing || !missing.length) return '';
   return `<div style="background:var(--warn-soft);border-radius:var(--r);padding:12px 14px;margin-top:14px;font-size:13px;color:var(--warn)">
-    <b>No thesis yet:</b> ${missing.map(esc).join(', ')}. Generate a thesis for these in <b>Research</b>, then regenerate.</div>`;
+    <b>Couldn't size:</b> ${missing.map(esc).join(', ')}. Their data couldn't be fetched, open them in <b>Research</b> and hit Refresh, then regenerate.</div>`;
 }
 
 function allocationView(plan, cap, missing) {
@@ -972,25 +984,24 @@ function allocationView(plan, cap, missing) {
         <div style="font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--accent-deep);min-width:62px">${w}%</div>${amt}
         <div style="flex:1;height:7px;border-radius:999px;box-shadow:var(--nm-in-sm);overflow:hidden"><div style="height:100%;width:${Math.min(100, w)}%;background:var(--accent-deep)"></div></div>
       </div>` : ''}
-      <div style="font-size:13px;line-height:1.5">${(a.justification || []).map((j) => esc(j)).join('<br>') || '—'}</div>
+      <div style="font-size:13px;line-height:1.5">${(a.justification || []).map((j) => mdBold(j)).join('<br>')}</div>
     </div>`;
   };
 
   const sumW = Math.round(funded.reduce((t, a) => t + a.target_weight_pct, 0));
   const head = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;margin:2px 0 14px">
-    <div style="font-family:var(--font-display);font-size:18px;font-weight:800">Monthly buy plan</div>
-    <div style="color:var(--muted);font-size:13px">${funded.length} position${funded.length === 1 ? '' : 's'} · ${sumW}% of new capital${cap ? ` · ${rupee(cap)} total` : ''}</div>
+    <div style="font-family:var(--font-display);font-size:18px;font-weight:800">Allocation plan</div>
+    <div style="color:var(--muted);font-size:13px">${funded.length} position${funded.length === 1 ? '' : 's'} · ${sumW}% of capital${cap ? ` · ${rupee(cap)} deployed` : ', add a monthly amount above for rupee splits'}</div>
   </div>`;
-  const summary = (ps.overall_style || ps.risk_posture || ps.concentration_notes) ? `<div style="background:var(--surface);box-shadow:var(--nm-in-sm);border-radius:var(--r);padding:13px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.6">
-    ${ps.overall_style ? `<div><b>Style:</b> ${esc(ps.overall_style)}</div>` : ''}
-    ${ps.risk_posture ? `<div><b>Risk:</b> ${esc(ps.risk_posture)}</div>` : ''}
-    ${ps.concentration_notes ? `<div><b>Concentration:</b> ${esc(ps.concentration_notes)}</div>` : ''}
+  const sumRow = (lab, val) => val ? `<div style="display:flex;gap:10px"><b style="flex:0 0 104px;color:var(--muted);font-weight:600">${lab}</b><span>${mdBold(val)}</span></div>` : '';
+  const summary = (ps.overall_style || ps.risk_posture || ps.concentration_notes) ? `<div style="background:var(--surface);box-shadow:var(--nm-in-sm);border-radius:var(--r);padding:14px 16px;margin-bottom:16px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent-deep);margin-bottom:10px">Approach</div>
+    <div style="display:grid;gap:9px;font-size:13.5px;line-height:1.55">
+      ${sumRow('Style', ps.overall_style)}${sumRow('Risk', ps.risk_posture)}${sumRow('Concentration', ps.concentration_notes)}
+    </div>
   </div>` : '';
   const avoidBlock = avoided.length ? `<div style="margin-top:6px"><div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 9px">Skipped this month</div>${avoided.map((a) => card(a, true)).join('')}</div>` : '';
-  const cons = (plan.constraints_applied && plan.constraints_applied.length) ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${plan.constraints_applied.map((c) => `<span style="font-size:11px;color:var(--muted);padding:3px 9px;border-radius:999px;box-shadow:var(--nm-in-sm)">${esc(c)}</span>`).join('')}</div>` : '';
-  const notes = plan.final_notes ? `<div style="margin-top:12px;padding:12px 14px;border-radius:var(--r);box-shadow:var(--nm-in-sm);font-size:13px;color:var(--muted);line-height:1.55">${esc(plan.final_notes)}</div>` : '';
-  const basis = `<div style="margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.5">Percentages are of this month’s fresh capital${cap ? '' : ' — enter a monthly amount above to see rupee buys'}. Caps: single ≤ 25%, sector ≤ 35%. Decision support, not advice.</div>`;
-  return head + summary + missingNote(missing) + funded.map((a) => card(a, false)).join('') + avoidBlock + cons + notes + basis;
+  return head + summary + missingNote(missing) + funded.map((a) => card(a, false)).join('') + avoidBlock;
 }
 
 /* ============================ CHROME ============================ */
@@ -1000,7 +1011,7 @@ function toggleTheme() { state.theme = state.theme === 'dark' ? 'light' : 'dark'
 /* ============================ LIVE QUOTE POLLING ============================ */
 // Screener lists stay cached (they barely move); once you're researching a single
 // name we poll its live quote every 5s and update the price + every price-derived
-// number in place — without re-rendering the view.
+// number in place, without re-rendering the view.
 function startLive(sym) {
   stopLive();
   if (!sym) return;
@@ -1028,7 +1039,7 @@ function updateLive(q) {
   const ce = $('#liveChg');
   if (ce) {
     const chg = q.changePct != null ? q.changePct : (q.prevClose ? (q.price / q.prevClose - 1) * 100 : null);
-    ce.textContent = chg == null ? '—' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%');
+    ce.textContent = chg == null ? '-' : ((chg >= 0 ? '+' : '') + chg.toFixed(2) + '%');
     ce.className = 'sd-chg ' + (chg == null ? '' : (chg >= 0 ? 'up' : 'down'));
   }
   const ago = $('#liveAgo'); if (ago) ago.textContent = 'live';
@@ -1063,9 +1074,9 @@ function toast(msg) {
 
 const INFO = {
   about: { title: 'About Meridian', body: `
-    <p><b>My monthly investing process — automated.</b> Meridian is the offline routine I used to run by hand, turned into one quiet tool: screen the market, research the survivors, decide. Built by Ansh Dwivedi; personal and non-commercial.</p>
-    <p>It's built for one kind of investing — buy quality businesses and hold them for years, without checking in unless something material changes. Done with discipline, that compounds in a way an index fund, a mutual fund, or any generic basket can't.</p>
-    <h4>The proof — my Groww portfolio</h4>
+    <p><b>My monthly investing process, automated.</b> Meridian is the offline routine I used to run by hand, turned into one quiet tool: screen the market, research the survivors, decide. Built by Ansh Dwivedi; personal and non-commercial.</p>
+    <p>It's built for one kind of investing, buy quality businesses and hold them for years, without checking in unless something material changes. Done with discipline, that compounds in a way an index fund, a mutual fund, or any generic basket can't.</p>
+    <h4>The proof, my Groww portfolio</h4>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 10px">
       <div style="background:var(--surface);box-shadow:var(--nm-out-sm);border-radius:var(--r);padding:15px">
         <div style="font-size:12px;color:var(--muted)">My portfolio · XIRR</div>
@@ -1078,13 +1089,13 @@ const INFO = {
     </div>
     <div style="text-align:center;margin:2px 0 12px;padding:12px;border-radius:var(--r);box-shadow:var(--nm-in-sm);font-size:13.5px">Outperformed NIFTY 50 by <b style="color:var(--accent-deep)">+20.27%</b></div>
     <h4>How it works</h4>
-    <p>Quantitative data from Screener.in; live price &amp; returns from Yahoo Finance; the long-term thesis is written by an AI agent (Google Gemini) that treats the fetched data as ground truth and researches the gaps from the live web. Nothing is fabricated — anything unreachable is shown as “—”.</p>
-    <p class="muted">Past performance is historical and specific to one portfolio — not a promise of future returns. See Terms &amp; Disclaimer.</p>` },
+    <p>Quantitative data from Screener.in; live price &amp; returns from Yahoo Finance; the long-term thesis is written by an AI agent (Google Gemini) that treats the fetched data as ground truth and researches the gaps from the live web. Nothing is fabricated, anything unreachable is shown as “-”.</p>
+    <p class="muted">Past performance is historical and specific to one portfolio, not a promise of future returns. See Terms &amp; Disclaimer.</p>` },
   howto: { title: 'How to use Meridian', body: `
     <h4>1 · Shortlist</h4><p>Pick screens, set a depth, take the intersection. Hit <b>Research</b> on the survivors you want to study.</p>
     <h4>2 · Research</h4><p>Pick a stock on the left. <b>Stock Data</b> shows six buckets of fundamentals with live prices; <b>Agent Thesis</b> generates a structured 10–15-year verdict on demand. Tap the ☆ to flag a name for allocation.</p>
-    <h4>3 · Allocation</h4><p>Your flagged names gather here. Enter your monthly amount (optional) and hit <b>Generate allocation</b> — the agent sizes a tiered buy plan from the theses, capped so no single name or sector dominates.</p>
-    <p class="muted">Everything resets when you close the tab — Meridian is a once-a-month, use-and-close tool.</p>` },
+    <h4>3 · Allocation</h4><p>Your flagged names gather here. Enter your monthly amount (optional) and hit <b>Generate allocation</b>, the agent sizes a tiered buy plan from the theses, capped so no single name or sector dominates.</p>
+    <p class="muted">Everything resets when you close the tab, Meridian is a once-a-month, use-and-close tool.</p>` },
   terms: { title: 'Terms & Disclaimer', body: `
     <p><b>Meridian is a personal research tool, not financial advice.</b> It is built by Ansh Dwivedi for his own use and shared with friends &amp; family. Nothing here is a recommendation to buy, sell, or hold any security.</p>
     <p>Ansh is not a SEBI-registered investment adviser or research analyst. Data is fetched from third parties (Screener.in, Yahoo Finance) and may be delayed, incomplete, or incorrect. The AI thesis is machine-generated decision support and can be wrong.</p>
@@ -1105,9 +1116,9 @@ function openInfo(k) {
 function init() {
   restore();
   applyTheme();
-  $('#footnote').innerHTML = 'Meridian · invest beyond the index · data from Screener.in &amp; Yahoo Finance · thesis by Gemini'
-    + '<br><span style="display:inline-flex;gap:6px;align-items:center;margin-top:6px">Not investment advice — a personal research tool.'
-    + ' <button class="footlink" onclick="openInfo(\'terms\')">Terms &amp; Disclaimer</button></span>';
+  // Installed PWA (standalone) gets the mobile-tuned layout via body.pwa; the website is untouched.
+  if ((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone) document.body.classList.add('pwa');
+  $('#footnote').innerHTML = '<button class="footlink" onclick="openInfo(\'terms\')">Terms &amp; Disclaimer</button>';
   renderBadges();
   goStep(state.step == null ? 0 : state.step);
 }

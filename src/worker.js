@@ -1,18 +1,18 @@
-// src/worker.js — Meridian backend (Cloudflare Worker + Static Assets + D1)
+// src/worker.js, Meridian backend (Cloudflare Worker + Static Assets + D1)
 //
 // Personal, non-commercial stock picker.
 //
-// Data path (lightweight, on demand — nothing is pre-computed for a universe):
+// Data path (lightweight, on demand, nothing is pre-computed for a universe):
 //   • Quantitative: when you view a screen or run an intersection, the Worker
 //     fetches ONLY the selected screens from Screener.in, ONLY as deep as the
 //     depth you chose (top-50 = one page each), parses the table, and computes
 //     the exact overlap in SQL. Results are briefly cached in D1 so re-runs
 //     don't re-fetch.
-//   • Qualitative: a stock's sections are fetched ONLY when you open it — one
+//   • Qualitative: a stock's sections are fetched ONLY when you open it, one
 //     fetch of that company's Screener page + a live Yahoo Finance chart.
 //
 // Screener's ToS allows personal, non-commercial viewing and restricts copying/
-// mirroring/public display/commercial use — so keep this private to you. If
+// mirroring/public display/commercial use, so keep this private to you. If
 // Screener blocks Cloudflare's IPs, the /api/admin/load fallback lets you paste
 // or push lists from your own machine. See README.
 //
@@ -23,7 +23,7 @@ import { handleAllocationRoute } from './allocation-agent.js';
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const SCREENER = 'https://www.screener.in';
-// Full browser-like headers — Screener (and many sites) reject bare requests.
+// Full browser-like headers, Screener (and many sites) reject bare requests.
 const BROWSER_HEADERS = {
   'user-agent': UA,
   'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -171,7 +171,7 @@ async function handleApi(request, env, url) {
     const failed = Object.values(sources).filter((s) => s.error);
     return json({
       count: out.length, limit, screenIds: ids, results: out, sources,
-      warning: failed.length ? `Couldn't fetch ${failed.length} screen(s) from Screener — showing what we have. Try Refresh, or load manually.` : null,
+      warning: failed.length ? `Couldn't fetch ${failed.length} screen(s) from Screener, showing what we have. Try Refresh, or load manually.` : null,
     });
   }
 
@@ -197,7 +197,7 @@ async function handleApi(request, env, url) {
       if (cached && cached.thesis_json) {
         try {
           const cj = JSON.parse(cached.thesis_json);
-          // Only serve a cache that actually has content — older builds could cache a
+          // Only serve a cache that actually has content, older builds could cache a
           // degenerate empty object, which rendered as a blank WATCH. Those fall
           // through and regenerate automatically.
           if (cj && (cj.executive_thesis || (cj.scores && cj.scores.total != null) || (Array.isArray(cj.bull_case) && cj.bull_case.length))) {
@@ -221,9 +221,17 @@ async function handleApi(request, env, url) {
   }
 
   // POST /api/allocation  { symbols, monthly_capital?, max_single_pct?, max_sector_pct?, include_watch? }
-  //   -> sizes this month's buy plan across the flagged names, from their cached theses.
+  //   -> sizes this month's plan across the flagged names; auto-generates a thesis
+  //      (ensureThesis) for any flagged name that has no cached thesis yet.
   if (p === '/api/allocation' && request.method === 'POST') {
-    return handleAllocationRoute(request, env, db, json);
+    const ensureThesis = async (sym) => {
+      const r = await buildPacket(db, sym, false);
+      if (r.error) return null;
+      const thesis = await runThesis(r.packet, env);   // throws on missing key; the route turns that into needsKey
+      await db.prepare(`UPDATE stocks SET thesis_json=?, thesis_at=? WHERE symbol=?`).bind(JSON.stringify(thesis), Date.now(), sym).run();
+      return thesis;
+    };
+    return handleAllocationRoute(request, env, db, json, ensureThesis);
   }
 
   // GET /api/chart/:symbol?range=1y&interval=1wk  -> Yahoo history for the in-app chart
@@ -247,10 +255,16 @@ async function handleApi(request, env, url) {
   const mQuote = p.match(/^\/api\/quote\/([^/]+)$/);
   if (mQuote && request.method === 'GET') {
     const symbol = decodeURIComponent(mQuote[1]);
-    const s = await db.prepare(`SELECT ticker FROM stocks WHERE symbol = ?`).bind(symbol).first();
+    const s = await db.prepare(`SELECT ticker, price FROM stocks WHERE symbol = ?`).bind(symbol).first();
     const ticker = (s && s.ticker) || symbol;
+    const ref = (s && s.price != null && isFinite(+s.price)) ? +s.price : null;   // Screener reference price
     try {
       const q = await yahooLive(ticker);
+      // Same guard as buildPacket: if Yahoo's live price is wildly off the Screener price
+      // (illiquid BSE names), show the Screener price rather than a clearly-wrong tick.
+      if (ref != null && q.price != null && (q.price / ref < 0.6 || q.price / ref > 1.667)) {
+        return json({ symbol, ticker, price: ref, prevClose: ref, change: 0, changePct: 0, stale: true });
+      }
       return json({ symbol, ticker, ...q });
     } catch (e) {
       return json({ symbol, ticker, error: String(e.message || e) }, 200);
@@ -351,7 +365,7 @@ async function ensureScreen(db, meta, limit) {
 // Fetch a screen's ranked list. Page 1 MUST be the bare screen URL: Screener
 // serves results to anonymous visitors there, but bounces query-string requests
 // (?limit=, ?page=) to its Register page. So we read page 1 (top ~25) from the
-// bare URL, and only paginate deeper if those pages actually return rows — which
+// bare URL, and only paginate deeper if those pages actually return rows, which
 // they do once a logged-in SCREENER_COOKIE is supplied; anonymously page 1 is the cap.
 async function fetchScreen(meta, depth) {
   const base = meta.url.replace(/\?.*$/, '');
@@ -399,8 +413,8 @@ async function writeScreenEntries(db, meta, entries) {
 /* ============================ Screener HTML parsing ============================ */
 
 function parseScreenTable(html) {
-  // Choose the table that actually holds the results — the one with the most
-  // /company/ links — regardless of its CSS class.
+  // Choose the table that actually holds the results, the one with the most
+  // /company/ links, regardless of its CSS class.
   const tables = [...html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)].map((m) => m[1]);
   let table = '', best = -1;
   for (const t of tables) { const n = (t.match(/\/company\//g) || []).length; if (n > best) { best = n; table = t; } }
@@ -448,11 +462,11 @@ function parseScreenTable(html) {
 async function buildPacket(db, symbol, force) {
   const status = await ensureCompany(db, symbol, force);
   const s = await db.prepare(`SELECT * FROM stocks WHERE symbol = ?`).bind(symbol).first();
-  if (!s) return { error: 'stock not found — add it from a screen first', status };
+  if (!s) return { error: 'stock not found, add it from a screen first', status };
   let detail = {};
   if (s.detail_json) { try { detail = JSON.parse(s.detail_json) || {}; } catch { detail = {}; } }
   const { detail_json, thesis_json, thesis_at, ...fields } = s;
-  Object.assign(fields, detail._scalars || {});             // book value, 52w, pledge — no dedicated column
+  Object.assign(fields, detail._scalars || {});             // book value, 52w, pledge, no dedicated column
   let chart = null;
   try { chart = await yahooChart(fields.ticker || symbol, '5y', '1mo'); } catch {}
   const market = chart ? {
@@ -460,7 +474,16 @@ async function buildPacket(db, symbol, force) {
     high_52w: chart.high_52w, low_52w: chart.low_52w, volume: chart.volume, exchange: chart.exchange, points: chart.points,
   } : {};
   let live = null;
-  if (chart && chart.price != null) { fields.price = chart.price; fields.live = true; live = { price: chart.price, prevClose: chart.prevClose, currency: chart.currency }; }
+  if (chart && chart.price != null) {
+    const refPrice = (fields.price != null && isFinite(+fields.price)) ? +fields.price : null;  // Screener's current price
+    const yp = +chart.price;
+    // Yahoo's quote for thinly-traded BSE names can be badly stale (it can show ~₹4 for a
+    // ₹30 stock). If it diverges wildly from Screener's price, keep Screener's and don't
+    // flash a bogus "live" tick; otherwise use Yahoo for the freshest number.
+    const sane = refPrice == null || (yp > 0 && yp / refPrice >= 0.6 && yp / refPrice <= 1.667);
+    if (sane) { fields.price = yp; fields.live = true; live = { price: yp, prevClose: chart.prevClose, currency: chart.currency }; }
+    else { market.price = refPrice; }
+  }
   const packet = assembleStockData(fields, detail, market);
   return { fields, detail, packet, live, status };
 }
@@ -587,7 +610,7 @@ function parseCompany(html) {
 
   // --- FULL financial statements (annual P&L / Balance Sheet / Cash Flow, the
   //     quarterly table, and the ratios table). These live in <section id="…">
-  //     blocks that the original parser ignored — they are the backbone of the
+  //     blocks that the original parser ignored, they are the backbone of the
   //     research view and the single biggest input to the thesis agent. ---
   out.detail.financials = {
     quarters:      parseDataTable(sliceSection(html, 'quarters')),
@@ -954,7 +977,7 @@ A JSON "packet" of quantitative data fetched from Screener.in + Yahoo Finance: c
 
 HOW TO USE THE DATA
 1. Treat the packet as your quantitative GROUND TRUTH. Quote its numbers; never contradict or invent them.
-2. For anything in the "gaps" array or otherwise missing — industry size / TAM, industry growth rate, market share, competitive position, regulatory & commodity exposure, recent news, board/auditor/litigation events, concall & management commentary, forward estimates — USE GOOGLE SEARCH to research it from reputable, recent sources.
+2. For anything in the "gaps" array or otherwise missing, industry size / TAM, industry growth rate, market share, competitive position, regulatory & commodity exposure, recent news, board/auditor/litigation events, concall & management commentary, forward estimates, USE GOOGLE SEARCH to research it from reputable, recent sources.
 3. In your prose, clearly distinguish packet facts ("reported financials show…") from web-researched facts ("recent industry sources indicate…").
 4. Do NOT fabricate. If neither the packet nor a credible web search gives a reliable answer, say so explicitly and lower your confidence.
 5. Do NOT use short-term price action as a thesis driver. Focus on durable 10-15 year compounding.
@@ -972,7 +995,12 @@ DECISION RULES
 
 confidence is 0-100 and MUST be lower when packet gaps are large or web evidence is thin.
 
-OUTPUT — return ONLY one valid JSON object (no markdown fences, no preamble) with EXACTLY these keys:
+WRITING STYLE (every prose field below)
+- Be specific and quantitative. Cite the actual figures from the packet: growth and margin %, ROCE/ROE, debt/equity, cash flows and market cap in Rs cr, the P/E or P/B, multi-year CAGRs, the number of years. Name the concrete driver, segment, product, customer, or competitor.
+- No generic filler ("strong fundamentals", "well-positioned", "robust growth", "healthy balance sheet"). If you cannot attach a number or a named fact to a sentence, delete it.
+- Plain prose. Do NOT use em dashes; use commas, colons, or periods. No markdown except optional **bold** on a short leading label.
+
+OUTPUT - return ONLY one valid JSON object (no markdown fences, no preamble) with EXACTLY these keys:
 {
  "executive_thesis": "one paragraph",
  "bull_case": ["3-5 evidence-backed points"],
@@ -1048,24 +1076,24 @@ async function runThesis(packet, env) {
 
 async function runThesisGemini(env, userContent) {
   const key = env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured — set it with: wrangler secret put GEMINI_API_KEY');
+  if (!key) throw new Error('GEMINI_API_KEY not configured, set it with: wrangler secret put GEMINI_API_KEY');
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const webResearch = String(env.THESIS_WEB_RESEARCH ?? 'true').toLowerCase() !== 'false';
 
-  // Attempt 1 — grounded (Google Search) for the richest thesis. JSON is enforced
+  // Attempt 1, grounded (Google Search) for the richest thesis. JSON is enforced
   // by the prompt and parsed defensively. Gemini 2.5 "thinks" by default and those
   // tokens are billed against the output budget, so we cap thinking AND give a
   // generous output ceiling; otherwise large-company packets (e.g. Bajaj Auto)
-  // truncate the JSON and the verdict comes back empty — the root cause of the
+  // truncate the JSON and the verdict comes back empty, the root cause of the
   // "works for some stocks, not others" bug.
   if (webResearch) {
     try {
       return await callGemini(key, model, userContent, { tools: [{ google_search: {} }], thinkingBudget: 6144, maxOutputTokens: 32768 });
     } catch (e) {
-      console.log('thesis: grounded attempt failed, falling back to schema mode —', String((e && e.message) || e));
+      console.log('thesis: grounded attempt failed, falling back to schema mode -', String((e && e.message) || e));
     }
   }
-  // Attempt 2 (and the no-web-research path) — schema-locked JSON, tools off,
+  // Attempt 2 (and the no-web-research path), schema-locked JSON, tools off,
   // thinking off. This reliably returns one complete, valid object for every
   // stock, so a truncated or blocked grounded call never leaves the user with a
   // blank verdict.
@@ -1082,7 +1110,7 @@ async function callGemini(key, model, userContent, opts = {}) {
   const generationConfig = { temperature: 0.4, maxOutputTokens: opts.maxOutputTokens || 16384 };
   if (opts.responseMimeType) generationConfig.responseMimeType = opts.responseMimeType;
   if (opts.responseSchema) generationConfig.responseSchema = opts.responseSchema;
-  // thinkingConfig is only valid on the 2.5 family — guard so custom models don't 400.
+  // thinkingConfig is only valid on the 2.5 family, guard so custom models don't 400.
   if (opts.thinkingBudget != null && /2[.\-]5/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: opts.thinkingBudget };
   const reqBody = {
     systemInstruction: { parts: [{ text: THESIS_SYSTEM_PROMPT }] },
@@ -1101,7 +1129,7 @@ async function callGemini(key, model, userContent, opts = {}) {
 
   let thesis;
   try { thesis = normalizeThesis(safeParseThesis(text)); }
-  catch (e) { throw new Error((finish === 'MAX_TOKENS' ? 'thesis JSON truncated (MAX_TOKENS) — ' : '') + String((e && e.message) || e)); }
+  catch (e) { throw new Error((finish === 'MAX_TOKENS' ? 'thesis JSON truncated (MAX_TOKENS), ' : '') + String((e && e.message) || e)); }
 
   // Attach grounding citations (the web sources the model used) for transparency.
   const gm = cand?.groundingMetadata;
@@ -1116,7 +1144,7 @@ async function callGemini(key, model, userContent, opts = {}) {
 }
 
 async function runThesisWorkersAI(env, userContent) {
-  if (!env.AI) throw new Error('no thesis provider configured — set GEMINI_API_KEY, or add the [ai] binding for the Workers AI fallback');
+  if (!env.AI) throw new Error('no thesis provider configured, set GEMINI_API_KEY, or add the [ai] binding for the Workers AI fallback');
   const model = env.WORKERS_AI_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
   const res = await env.AI.run(model, {
     messages: [
@@ -1136,8 +1164,9 @@ async function runThesisWorkersAI(env, userContent) {
 // UI rendering) a blank verdict.
 function normalizeThesis(t) {
   if (!t || typeof t !== 'object' || Array.isArray(t)) throw new Error('thesis is not a JSON object');
-  const arr = (v) => (Array.isArray(v) ? v.filter((x) => x != null && String(x).trim()).map((x) => String(x).trim()) : []);
-  const str = (v) => (v == null ? '' : String(v).trim());
+  const clean = (x) => String(x).replace(/\s*\u2014\s*/g, ', ').trim();   // strip em dashes the model emits
+  const arr = (v) => (Array.isArray(v) ? v.filter((x) => x != null && String(x).trim()).map(clean) : []);
+  const str = (v) => (v == null ? '' : clean(v));
   const int = (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? n : null; };
   const s = t.scores && typeof t.scores === 'object' ? t.scores : {};
   const pos = ['growth_runway', 'moat', 'financial_quality', 'management_governance', 'valuation', 'industry_attractiveness'];
@@ -1224,7 +1253,7 @@ async function fetchCompanyRaw(symbol) {
   //     const r = await fetch(`https://financialmodelingprep.com/api/v3/...&apikey=${key}`);
   //     return await r.text();   // then adapt parseCompany to read this shape
   //   }
-  throw new Error(`unknown DATA_PROVIDER "${provider}" — implement its branch in fetchCompanyRaw()`);
+  throw new Error(`unknown DATA_PROVIDER "${provider}", implement its branch in fetchCompanyRaw()`);
 }
 
 function checkAdmin(request, env) {
@@ -1256,5 +1285,5 @@ function numOrNull(v) {
 }
 function titleCase(s) { return String(s || '').replace(/\b\w/g, (c) => c.toUpperCase()); }
 
-// Named exports for unit tests (no effect on the Worker runtime — these are pure).
+// Named exports for unit tests (no effect on the Worker runtime, these are pure).
 export { SCREENS, parseScreenTable, parseCompany, parseDataTable, sliceSection, assembleStockData, computeReturns, toGeminiSchema, THESIS_JSON_SCHEMA, codeToTicker, numOrNull, clampLimit, stripTags, decodeEntities, BROWSER_HEADERS, parseDocuments, classifyDoc, matchDate, safeParseThesis, extractBalancedJson, normalizeThesis };

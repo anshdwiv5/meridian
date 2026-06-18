@@ -1,7 +1,7 @@
 /* ============================ allocation agent (step 3) ============================
  * Sizes a monthly buy plan across the names you flagged in Research, using the
  * scorecard the THESIS agent already cached in D1 (thesis_json). It does NOT
- * re-research — research is ground truth; this layer only allocates capital.
+ * re-research, research is ground truth; this layer only allocates capital.
  *
  * Design choices (why this is cheap + stable month to month):
  *  - INPUT is a compact digest of each thesis (scores + verdict + 1 line + top
@@ -28,7 +28,7 @@
  * No new secrets, no schema migration, no new dependency. Uses GEMINI_API_KEY.
  * ================================================================================ */
 
-// Tunable defaults — override per request via the POST body.
+// Tunable defaults, override per request via the POST body.
 export const ALLOCATION_DEFAULTS = {
   capital_basis: 'fresh_monthly_capital',
   max_single_pct: 25, // hard ceiling per stock (never let one name dominate)
@@ -53,9 +53,9 @@ ELIGIBILITY
 - confidence < 55 or low_evidence true -> cap at Tier C no matter how high the score (be conservative when evidence is thin).
 
 TIERS (anchor on total/30 and confidence)
-- Tier A — core compounders: total >= 22 AND confidence >= 70 AND financial_quality >= 3 AND management_governance >= 3 AND valuation >= 2.
-- Tier B — good, size modestly: total 15-21, OR an A-grade business held back by rich valuation (valuation <= 1) or confidence 55-69.
-- Tier C — small only: total < 15, or confidence < 55, or WATCH, or a notable governance/risk flag.
+- Tier A, core compounders: total >= 22 AND confidence >= 70 AND financial_quality >= 3 AND management_governance >= 3 AND valuation >= 2.
+- Tier B, good, size modestly: total 15-21, OR an A-grade business held back by rich valuation (valuation <= 1) or confidence 55-69.
+- Tier C, small only: total < 15, or confidence < 55, or WATCH, or a notable governance/risk flag.
 
 SIZING (bands of new capital; rank within each band, do not flatten)
 - Tier A clearly the largest weights; Tier B moderate; Tier C small.
@@ -68,7 +68,7 @@ CAPS & BALANCE
 - Prefer at least ~5 funded names when the eligible set allows; if fewer are eligible, say so in concentration_notes rather than forcing diversification.
 - Drop anything below constraints.min_position_pct to 0 (avoid dust).
 
-OUTPUT — return ONLY one valid JSON object (no markdown, no preamble), EXACTLY these keys:
+OUTPUT, return ONLY one valid JSON object (no markdown, no preamble), EXACTLY these keys:
 {
  "portfolio_summary": { "overall_style": "", "risk_posture": "", "concentration_notes": "", "capital_basis": "fresh_monthly_capital" },
  "tiers": { "A": ["TICKER"], "B": [], "C": [] },
@@ -77,14 +77,21 @@ OUTPUT — return ONLY one valid JSON object (no markdown, no preamble), EXACTLY
  "final_notes": ""
 }
 
+PORTFOLIO SUMMARY (be concrete, never generic)
+- overall_style: name the actual tilt and the names/sectors driving it (e.g. "Concentrated quality-compounder tilt: 60% in HINDZINC and INFY").
+- risk_posture: state the real risks in THIS set (valuation, single-name, sector, liquidity), with the numbers, not a boilerplate line.
+- concentration_notes: give figures, e.g. "Only 2 eligible names, top position 25%, IT is 35% of capital".
+
 JUSTIFICATION STYLE
-- 2-3 short lines per stock, investment-committee tone, not prose.
-- Name the ONE main reason for the weight and cite the number behind it.
-- Examples: "Tier A: total 26, confidence 80, valuation still fair — core weight." / "Strong franchise but valuation rich (val 1/5) — keep it, size it down." / "WATCH + thin evidence — toehold only until the thesis firms up."
+- 2-3 short lines per stock, investment-committee tone.
+- Name the ONE main reason for the weight and cite the number behind it (total, confidence, the weak or strong sub-score).
+- Examples: "Tier A: total 26, confidence 80, valuation fair at 3/5. Core weight." / "Strong franchise but valuation rich (val 1/5). Keep it, size down." / "WATCH plus thin evidence (confidence 50). Toehold only."
 
 RULES
 - Weights of funded names sum to 100. Use action AVOID (0%) for REJECT and skipped WATCH names. ADD/HOLD/TRIM are only valid when current_weight_pct is provided.
-- Do not give generic investing advice, do not repeat the full thesis, do not use false-precision math. If inputs are insufficient, allocate small and say why.`;
+- Be specific and quantitative everywhere: cite the score or figure behind each claim. No generic investing advice, no repeating the full thesis, no false-precision math.
+- Plain prose. Do NOT use em dashes; use commas, colons or periods.
+- If inputs are insufficient, allocate small and say why.`;
 
 // Canonical JSON Schema (lowercase) used to schema-lock the model's output.
 export const ALLOCATION_JSON_SCHEMA = {
@@ -190,7 +197,7 @@ export function buildAllocationInput(rows, opts = {}) {
 // --- the model call: schema-locked JSON, no grounding, no thinking, low temp ---
 export async function runAllocation(input, env) {
   const key = env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured — set it with: wrangler secret put GEMINI_API_KEY');
+  if (!key) throw new Error('GEMINI_API_KEY not configured, set it with: wrangler secret put GEMINI_API_KEY');
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const userContent = 'Allocate this month’s capital across these approved stocks (use ONLY this data):\n```json\n' + JSON.stringify(input) + '\n```';
   const u = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
@@ -272,7 +279,7 @@ function enforceCaps(funded, sectorOf, maxSingle, maxSector, total = 100) {
 
 // Round funded weights to a 0.1 grid that sums to EXACTLY 100.0 (largest-remainder,
 // so rupee buy amounts are exact), then shave any cap overshoot created by rounding
-// into the roomiest name — each move is 0.1 between two names, so the total never
+// into the roomiest name, each move is 0.1 between two names, so the total never
 // leaves 100.0. If no name has room (caps too tight to fit 100), it stops: caps are
 // best-effort, full deployment wins.
 function finalizeWeights(funded, sectorOf, maxSingle, maxSector) {
@@ -294,7 +301,7 @@ function finalizeWeights(funded, sectorOf, maxSingle, maxSector) {
     const dst = funded
       .filter((a) => a !== src && a.target_weight_pct + 0.1 <= maxSingle + 1e-6 && ss[sectorOf(a.ticker)] + 0.1 <= maxSector + 1e-6)
       .sort((x, y) => (maxSingle - x.target_weight_pct) - (maxSingle - y.target_weight_pct)).pop();
-    if (!dst) break; // infeasible — leave best-effort, total stays 100
+    if (!dst) break; // infeasible, leave best-effort, total stays 100
     src.target_weight_pct = round1(src.target_weight_pct - 0.1);
     dst.target_weight_pct = round1(dst.target_weight_pct + 0.1);
   }
@@ -305,6 +312,7 @@ export function normalizeAllocation(raw, input) {
   const c = (input && input.constraints) || ALLOCATION_DEFAULTS;
   const sectorOf = {}; const verdictOf = {};
   for (const s of (input?.stocks || [])) { sectorOf[s.ticker] = s.sector || 'Unknown'; verdictOf[s.ticker] = s.verdict; }
+  const stripEm = (s) => String(s ?? '').replace(/\s*\u2014\s*/g, ', ').trim();   // drop em dashes the model emits
 
   const allocs = Array.isArray(raw.allocations) ? raw.allocations.map((a) => ({
     ticker: String(a.ticker || '').trim(),
@@ -312,7 +320,7 @@ export function normalizeAllocation(raw, input) {
     target_weight_pct: Math.max(0, numOr(a.target_weight_pct, 0)),
     current_weight_pct: numOr(a.current_weight_pct),
     action: String(a.action || '').toUpperCase(),
-    justification: Array.isArray(a.justification) ? a.justification.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : [],
+    justification: Array.isArray(a.justification) ? a.justification.map(stripEm).filter(Boolean).slice(0, 3) : [],
   })).filter((a) => a.ticker) : [];
 
   // Force REJECT names to AVOID/0 even if the model funded them.
@@ -354,27 +362,29 @@ export function normalizeAllocation(raw, input) {
   const ps = (raw.portfolio_summary && typeof raw.portfolio_summary === 'object') ? raw.portfolio_summary : {};
   return {
     portfolio_summary: {
-      overall_style: String(ps.overall_style || ''),
-      risk_posture: String(ps.risk_posture || ''),
-      concentration_notes: String(ps.concentration_notes || ''),
+      overall_style: stripEm(ps.overall_style),
+      risk_posture: stripEm(ps.risk_posture),
+      concentration_notes: stripEm(ps.concentration_notes),
       capital_basis: String(ps.capital_basis || c.capital_basis || 'fresh_monthly_capital'),
     },
     tiers,
     allocations: finalAllocs,
     constraints_applied: Array.isArray(raw.constraints_applied) ? raw.constraints_applied.map(String) : [],
-    final_notes: String(raw.final_notes || ''),
+    final_notes: stripEm(raw.final_notes),
   };
 }
 
 /**
- * Route handler — POST /api/allocation
+ * Route handler, POST /api/allocation
  * body: { symbols: string[], monthly_capital?: number,
  *         max_single_pct?, max_sector_pct?, include_watch?,
  *         current_weights?: { [symbol]: pct } }
- * Pulls each flagged symbol's cached thesis from D1, runs the agent, and (if
- * monthly_capital is given) attaches deterministic rupee buy amounts in JS.
+ * Pulls each flagged symbol's cached thesis from D1, auto-generating one via
+ * ensureThesis(symbol) for any name that lacks it (so a missing thesis never
+ * blocks the plan), runs the agent, and splits monthly_capital into rupee buys
+ * that sum EXACTLY to the amount.
  */
-export async function handleAllocationRoute(request, env, db, json) {
+export async function handleAllocationRoute(request, env, db, json, ensureThesis) {
   const body = await request.json().catch(() => ({}));
   const symbols = Array.isArray(body.symbols) ? body.symbols.map((s) => String(s).trim()).filter(Boolean) : [];
   if (!symbols.length) return json({ error: 'no symbols flagged for allocation' }, 400);
@@ -385,20 +395,32 @@ export async function handleAllocationRoute(request, env, db, json) {
   }
   if (typeof body.include_watch === 'boolean') opts.include_watch = body.include_watch;
 
+  const usableThesis = (t) => t && (t.verdict || (t.scores && t.scores.total != null));
   const rows = [];
-  const missing = []; // flagged names with no usable thesis yet -> UI should prompt to Generate
+  const missing = [];   // names whose data couldn't be fetched even after a generate attempt
+  let keyError = null;  // set if the thesis backfill reports a missing Gemini key
   for (const symbol of symbols) {
-    const rec = await db.prepare(`SELECT symbol, ticker, sector, thesis_json FROM stocks WHERE symbol=?`).bind(symbol).first();
+    let rec = await db.prepare(`SELECT symbol, ticker, sector, thesis_json FROM stocks WHERE symbol=?`).bind(symbol).first();
     let thesis = null;
     if (rec && rec.thesis_json) { try { thesis = JSON.parse(rec.thesis_json); } catch {} }
-    const usable = thesis && (thesis.verdict || (thesis.scores && thesis.scores.total != null));
-    if (!usable) { missing.push(symbol); continue; }
+    // Auto-generate (and cache) a thesis for any flagged name that lacks one.
+    if (!usableThesis(thesis) && typeof ensureThesis === 'function' && !keyError) {
+      try {
+        thesis = await ensureThesis(symbol);
+        if (usableThesis(thesis)) rec = await db.prepare(`SELECT symbol, ticker, sector, thesis_json FROM stocks WHERE symbol=?`).bind(symbol).first();
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        if (/api key|GEMINI|not configured/i.test(msg)) keyError = msg;
+      }
+    }
+    if (!usableThesis(thesis)) { missing.push(symbol); continue; }
     rows.push({
       symbol, ticker: (rec && rec.ticker) || symbol, sector: rec && rec.sector,
       thesis, current_weight_pct: body.current_weights ? body.current_weights[symbol] : undefined,
     });
   }
-  if (!rows.length) return json({ error: 'no flagged names have a thesis yet — generate theses first', missing }, 200);
+  if (keyError && !rows.length) return json({ error: keyError, needsKey: true, missing }, 200);
+  if (!rows.length) return json({ error: 'could not fetch data for the flagged names', missing }, 200);
 
   const input = buildAllocationInput(rows, opts);
   let allocation;
@@ -409,10 +431,16 @@ export async function handleAllocationRoute(request, env, db, json) {
     return json({ error: msg, needsKey: /api key|GEMINI|not configured/i.test(msg), missing }, 200);
   }
 
-  // Deterministic rupee buys (JS, not the model) when a monthly amount is given.
+  // Rupee buys that sum EXACTLY to the monthly amount (largest-remainder split).
   const cap = Number(body.monthly_capital);
+  for (const a of allocation.allocations) a.target_amount = 0;
   if (Number.isFinite(cap) && cap > 0) {
-    for (const a of allocation.allocations) a.target_amount = Math.round((a.target_weight_pct / 100) * cap);
+    const total = Math.round(cap);
+    const funded = allocation.allocations.filter((a) => a.target_weight_pct > 0);
+    const ex = funded.map((a) => { const x = (a.target_weight_pct / 100) * total; const base = Math.floor(x); a.target_amount = base; return { a, rem: x - base }; });
+    let left = total - ex.reduce((t, e) => t + e.a.target_amount, 0);
+    ex.sort((p, q) => q.rem - p.rem);
+    for (let i = 0; left > 0 && i < ex.length; i++, left--) ex[i].a.target_amount += 1;
   }
-  return json({ basis: allocation.portfolio_summary.capital_basis, monthly_capital: Number.isFinite(cap) ? cap : null, missing, allocation, generated_at: Date.now() });
+  return json({ basis: allocation.portfolio_summary.capital_basis, monthly_capital: Number.isFinite(cap) && cap > 0 ? Math.round(cap) : null, missing, allocation, generated_at: Date.now() });
 }

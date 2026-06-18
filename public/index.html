@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Meridian · invest beyond the index</title>
-<meta name="description" content="Meridian — invest beyond the index. A personal long-term Indian-equity stock picker: screen, research, allocate." />
+<meta name="description" content="Meridian, invest beyond the index. A personal long-term Indian-equity stock picker: screen, research, allocate." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
@@ -23,7 +23,7 @@
 
   <!-- TOP BAR: brand · step navigator · utilities -->
   <header class="topbar">
-    <button class="brand" onclick="goStep(0)" aria-label="Meridian — home">
+    <button class="brand" onclick="goStep(0)" aria-label="Meridian, home">
       <svg class="brandlogo" viewBox="0 0 200 200" aria-hidden="true" fill="none">
         <circle cx="100" cy="100" r="62" fill="none" stroke="currentColor" stroke-width="9"/>
         <path d="M154 46 L116 116 L84 84 Z" fill="currentColor"/>
@@ -54,9 +54,8 @@
         <path d="M55 145 L116 116 L84 84 Z" fill="var(--text)"/>
       </svg>
     </div>
-    <p class="hero-eyebrow">A fixed direction in a noisy market</p>
     <h1>Invest beyond<br><span class="grad">the index.</span></h1>
-    <p>My monthly research routine — screen, study, allocate — automated into one quiet tool for long-term, quality investing.</p>
+    <p>My monthly research routine: screen, study, allocate. Automated into one quiet tool for long-term, quality investing.</p>
     <button class="hero-cta" onclick="goStep(1)">
       Invest!
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -64,7 +63,15 @@
     <div class="hero-foot">
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Screener intersections</span>
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8l7-5 7 5"/><path d="M5 8v8l7 5 7-5V8"/></svg> AI thesis agent</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1-9-9v9z"/><path d="M12 3a9 9 0 0 1 9 9h-9z"/></svg> AI allocation agent</span>
       <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Live prices</span>
+    </div>
+    <div class="hero-stats">
+      <div class="hs-row">
+        <div class="hs"><div class="hs-k">My portfolio · XIRR</div><div class="hs-v pos">+19.32%</div></div>
+        <div class="hs"><div class="hs-k">NIFTY 50 · XIRR</div><div class="hs-v neg">-0.95%</div></div>
+      </div>
+      <div class="hs-foot">Outperformed NIFTY 50 by <b>+20.27%</b>, from my live Groww portfolio.</div>
     </div>
   </section>
 
@@ -106,6 +113,12 @@
 
     <!-- ===================== STEP 2 · RESEARCH ===================== -->
     <section class="view" id="view-2">
+      <div class="page rs-intro" style="padding-top:clamp(20px,3vw,34px);padding-bottom:0">
+        <div class="phead"><div>
+          <h1 class="ptitle">Research</h1>
+          <p class="psub">Study each survivor in depth: fundamentals, charts, ownership and a long-term AI thesis. Star the names worth sizing in Allocation.</p>
+        </div></div>
+      </div>
       <div class="research" id="research">
         <aside class="sidebar" id="sidebar"></aside>
         <div class="rs-main" id="rsMain">
@@ -129,7 +142,7 @@
         <div class="phead">
           <div>
             <h1 class="ptitle">Allocation</h1>
-            <p class="psub">Coming soon!</p>
+            <p class="psub">Size this month's buys across the names you starred, weighted by conviction.</p>
           </div>
         </div>
         <div id="allocMount"></div>
@@ -149,7 +162,7 @@
 <script src="/app.js"></script>
 <script>
   // Register the network-first service worker so the installed PWA picks up new
-  // deploys automatically — no delete-and-reinstall. When a new worker takes
+  // deploys automatically, no delete-and-reinstall. When a new worker takes
   // control, reload once to swap in the fresh build.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

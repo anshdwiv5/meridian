@@ -1,7 +1,7 @@
-/* Meridian — Neumorphic "Soft UI" theme.
+/* Meridian, Neumorphic "Soft UI" theme.
    Monochromatic cool-grey surface; depth comes from dual opposing shadows, not
    borders. Single teal accent (Meridian brand) replaces the reference violet.
-   Layout/structure preserved from the flat build — only the skin changed. */
+   Layout/structure preserved from the flat build, only the skin changed. */
 
 :root{
   --bg:#E0E5EC; --surface:#E0E5EC; --surface-2:#E0E5EC; --raise:#E0E5EC;
@@ -331,7 +331,7 @@ details.fin[open]>summary{box-shadow:var(--nm-in-sm); border-radius:var(--r) var
 .gapnote{margin-top:14px; padding:12px 15px; border-radius:var(--r-sm); background:var(--bg); box-shadow:var(--nm-in-sm); font-size:12.5px; color:var(--muted); line-height:1.6}
 .gapnote b{color:var(--text)}
 
-/* document cards (filings & concalls) — click opens the source directly */
+/* document cards (filings & concalls), click opens the source directly */
 .docgrid{display:grid; gap:14px; grid-template-columns:1fr}
 @media(min-width:560px){.docgrid{grid-template-columns:1fr 1fr}}
 @media(min-width:920px){.docgrid{grid-template-columns:1fr 1fr 1fr}}
@@ -464,3 +464,37 @@ details.fin[open]>summary{box-shadow:var(--nm-in-sm); border-radius:var(--r) var
 .footnote{padding:20px; padding-bottom:max(20px,env(safe-area-inset-bottom)); font-size:11.5px; color:var(--dim); text-align:center; line-height:1.7}
 .footlink{font-size:11.5px; font-weight:700; color:var(--accent-deep); padding:3px 9px; border-radius:8px; background:var(--surface); box-shadow:var(--nm-out-sm)}
 .footlink:active{box-shadow:var(--nm-in-sm)}
+
+/* hero credibility stats */
+.hero-stats{margin-top:30px; width:min(420px,100%); border-radius:var(--r-lg); background:var(--surface); box-shadow:var(--nm-out); padding:16px 18px}
+.hero-stats .hs-row{display:flex; gap:14px}
+.hero-stats .hs{flex:1; border-radius:var(--r); background:var(--surface); box-shadow:var(--nm-in-sm); padding:12px 14px; text-align:left}
+.hero-stats .hs-k{font-size:11.5px; color:var(--muted)}
+.hero-stats .hs-v{font-size:24px; font-weight:800; font-family:var(--font-display); margin-top:3px; line-height:1.1}
+.hero-stats .hs-v.pos{color:var(--pos)} .hero-stats .hs-v.neg{color:var(--neg)}
+.hero-stats .hs-foot{margin-top:12px; text-align:center; font-size:12.5px; color:var(--muted)} .hero-stats .hs-foot b{color:var(--accent-deep)}
+
+/* ============================ PWA (installed app) overrides ============================ */
+/* Scoped to body.pwa (set in init() when running standalone) so the website is untouched. */
+body.pwa .topbar{flex-wrap:wrap; gap:10px 12px}
+body.pwa .brand{order:1}
+body.pwa .topright{order:2; margin-left:auto}          /* How / About / theme to the right of row 1 */
+body.pwa .stepper{order:3; flex:1 1 100%; margin:0}    /* 3 tabs drop to a full-width second row */
+body.pwa.hero-on .topbar{position:absolute; justify-content:flex-start}
+body.pwa.hero-on .topright{margin-left:auto}           /* theme toggle sits top-right on the hero */
+
+/* research: single column with a horizontal stock switcher on top (the 2-col grid is unusable narrow) */
+body.pwa .research{display:block; min-height:0; padding:0 12px}
+body.pwa .sidebar{position:static; max-height:none; display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding:6px 2px 12px}
+body.pwa .sidebar .sb-h{display:none}
+body.pwa .sl-item{flex:0 0 auto; min-width:150px; margin-bottom:0}
+body.pwa .rs-main{padding:0 2px 96px}
+body.pwa .rs-tabbar{position:static; top:auto}
+body.pwa .rs-head{padding:14px 2px 12px}
+body.pwa .rs-intro{padding-bottom:0}
+body.pwa .scorebar{grid-template-columns:118px 1fr 30px}
+
+/* survivor rows: stack the Research action full-width so it stops floating oddly */
+body.pwa .row{grid-template-columns:26px 1fr auto; align-items:center; row-gap:10px}
+body.pwa .row .num.hide-m{display:none}
+body.pwa .row .add{grid-column:1 / -1; justify-content:center; width:100%}
